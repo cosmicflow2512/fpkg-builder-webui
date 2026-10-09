@@ -29,4 +29,6 @@
   <Config Name="FPKG_REPO_ROOT" Target="FPKG_REPO_ROOT" Default="/app/fpkg-builder" Description="Path to the fPKG Builder repository inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">/app/fpkg-builder</Config>
   <Config Name="FPKG_POWERSHELL" Target="FPKG_POWERSHELL" Default="pwsh" Description="PowerShell executable used by the WebUI runner." Type="Variable" Display="advanced" Required="true" Mask="false">pwsh</Config>
   <Config Name="FPKG_PYTHON" Target="FPKG_PYTHON" Default="python3" Description="Python executable passed to build-fpkg.ps1." Type="Variable" Display="advanced" Required="true" Mask="false">python3</Config>
+  <Config Name="FPKG_IMPORT_ROOT" Target="FPKG_IMPORT_ROOT" Default="/mnt/cache/appdata/fpkg-builder/imports" Description="Temporary import folder for archives selected in the WebUI." Type="Variable" Display="advanced" Required="true" Mask="false">/mnt/cache/appdata/fpkg-builder/imports</Config>
+  <Config Name="FPKG_BROWSE_ROOTS" Target="FPKG_BROWSE_ROOTS" Default="/mnt/user:/mnt/cache/appdata:/app/fpkg-builder" Description="Colon-separated paths the WebUI file browser may browse." Type="Variable" Display="advanced" Required="true" Mask="false">/mnt/user:/mnt/cache/appdata:/app/fpkg-builder</Config>
 </Container>
