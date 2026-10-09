@@ -9,9 +9,11 @@ import platform
 import shutil
 import signal
 import subprocess
+import tarfile
 import threading
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -43,6 +45,8 @@ BROWSE_ROOTS = [
 class Job:
     id: str
     args: list[str]
+    kind: str = "command"
+    payload: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     status: str = "queued"
     return_code: Optional[int] = None
@@ -231,6 +235,102 @@ def build_args(payload: dict[str, Any]) -> list[str]:
     return args
 
 
+def import_root() -> Path:
+    return Path(os.environ.get("FPKG_IMPORT_ROOT", "/mnt/cache/appdata/fpkg-builder/imports"))
+
+
+def archive_stem(path: Path) -> str:
+    name = path.name
+    for suffix in (".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".tbz2", ".txz"):
+        if name.lower().endswith(suffix):
+            return name[: -len(suffix)]
+    return path.stem
+
+
+def safe_extract_zip(archive: Path, destination: Path) -> None:
+    with zipfile.ZipFile(archive) as handle:
+        for member in handle.infolist():
+            target = (destination / member.filename).resolve()
+            if destination.resolve() not in target.parents and target != destination.resolve():
+                raise ValueError(f"Archive entry escapes destination: {member.filename}")
+        handle.extractall(destination)
+
+
+def safe_extract_tar(archive: Path, destination: Path) -> None:
+    with tarfile.open(archive) as handle:
+        for member in handle.getmembers():
+            target = (destination / member.name).resolve()
+            if destination.resolve() not in target.parents and target != destination.resolve():
+                raise ValueError(f"Archive entry escapes destination: {member.name}")
+        handle.extractall(destination)
+
+
+def extract_archive(archive: Path, destination: Path, job: Job) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    lower = archive.name.lower()
+    seven_zip = shutil.which("7z") or shutil.which("7za")
+    if lower.endswith(".zip"):
+        job.append("Extracting ZIP archive.")
+        safe_extract_zip(archive, destination)
+        return
+    if lower.endswith((".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2")):
+        job.append("Extracting TAR archive.")
+        safe_extract_tar(archive, destination)
+        return
+    if seven_zip:
+        job.append(f"Extracting archive with {seven_zip}.")
+        run_process(job, [seven_zip, "x", "-y", f"-o{destination}", str(archive)])
+        if job.return_code not in (None, 0):
+            raise RuntimeError(f"Archive extraction failed with exit code {job.return_code}")
+        job.return_code = None
+        return
+    raise ValueError("Unsupported archive type without 7z/7za installed.")
+
+
+def single_child_or_self(path: Path) -> Path:
+    children = [child for child in path.iterdir() if not child.name.startswith(".")]
+    if len(children) == 1 and children[0].is_dir():
+        return children[0]
+    return path
+
+
+def contains_game_dump(path: Path) -> bool:
+    return (path / "sce_sys" / "param.json").is_file()
+
+
+def archive_build_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    archive = Path(str(payload.get("archive", "")).strip())
+    if not archive.is_file():
+        raise ValueError(f"Archive does not exist or is not a file: {archive}")
+    output_folder = str(payload.get("outputFolder", "")).strip() or "/mnt/user/fpkg-output"
+    return {
+        "archive": str(archive),
+        "outputFolder": output_folder,
+        "gameFolder": str(payload.get("gameFolder", "")).strip(),
+        "gameArchive": str(payload.get("gameArchive", "")).strip(),
+        "basePackage": str(payload.get("basePackage", "")).strip(),
+        "name": str(payload.get("name", "")).strip(),
+        "force": bool(payload.get("force")),
+        "keepWork": bool(payload.get("keepWork")),
+        "compressionLevel": str(payload.get("compressionLevel", "7")).strip() or "7",
+    }
+
+
+def extract_to_import(archive: Path, job: Job, label: str) -> Path:
+    destination = import_root() / f"{label}-{archive_stem(archive)}-{job.id}"
+    job.append(f"Import archive: {archive}")
+    job.append(f"Extract into: {destination}")
+    extract_archive(archive, destination, job)
+    return single_child_or_self(destination)
+
+
+def title_id_from_pkg(package: Path) -> str | None:
+    info = pkg_info(str(package))
+    param = (info or {}).get("param") or {}
+    title_id = param.get("titleId")
+    return str(title_id).strip() if title_id else None
+
+
 def extract_args(payload: dict[str, Any]) -> list[str]:
     publisher = publisher_path()
     if not publisher.exists():
@@ -254,29 +354,93 @@ def extract_args(payload: dict[str, Any]) -> list[str]:
     return [str(publisher), "img_extract"] + passcode_args + ["--no_progress_bar", package, destination]
 
 
+def run_process(job: Job, args: list[str]) -> None:
+    job.append("Command: " + " ".join(args))
+    process = subprocess.Popen(
+        args,
+        cwd=str(ROOT),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        start_new_session=True,
+    )
+    job.process = process
+    assert process.stdout is not None
+    for line in process.stdout:
+        job.append(line)
+    job.return_code = process.wait()
+
+
+def run_archive_build(job: Job) -> None:
+    payload = job.payload
+    archive = Path(payload["archive"])
+    source = extract_to_import(archive, job, "main")
+    build_payload: dict[str, Any] = {
+        "outputFolder": payload["outputFolder"],
+        "compressionLevel": payload.get("compressionLevel", "7"),
+        "force": payload.get("force", False),
+        "keepWork": payload.get("keepWork", False),
+    }
+    if payload.get("name"):
+        build_payload["name"] = payload["name"]
+
+    if contains_game_dump(source):
+        job.append(f"Archive looks like a game dump: {source}")
+        build_payload["gameFolder"] = str(source)
+    else:
+        game_folder = payload.get("gameFolder", "")
+        game_archive = payload.get("gameArchive", "")
+        base_package = payload.get("basePackage", "")
+        job.append(f"Archive looks like backport files: {source}")
+        build_payload["backportFolder"] = str(source)
+
+        if base_package:
+            base_path = Path(base_package)
+            if not base_path.is_file():
+                raise ValueError(f"Base PKG does not exist or is not a file: {base_path}")
+            name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
+            build_payload["name"] = name
+            output_dir = Path(payload["outputFolder"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            target_base = output_dir / f"{name}.pkg"
+            if target_base.resolve() != base_path.resolve():
+                if target_base.exists() and not payload.get("force"):
+                    job.append(f"Using existing base package: {target_base}")
+                else:
+                    job.append(f"Copying base package to: {target_base}")
+                    shutil.copy2(base_path, target_base)
+        elif game_archive:
+            game_archive_path = Path(game_archive)
+            if not game_archive_path.is_file():
+                raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
+            game_source = extract_to_import(game_archive_path, job, "game")
+            if not contains_game_dump(game_source):
+                raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
+            build_payload["gameFolder"] = str(game_source)
+        elif game_folder:
+            build_payload["gameFolder"] = game_folder
+        elif not payload.get("name"):
+            raise ValueError(
+                "Backport-only archive needs a Base PKG, Game archive, Game folder, or a Name matching an existing base PKG in the output folder."
+            )
+
+    args = build_args(build_payload)
+    run_process(job, args)
+
+
 def run_job(job: Job) -> None:
     global active_job_id
     with jobs_lock:
         active_job_id = job.id
         job.status = "running"
     job.append(f"Starting job {job.id}")
-    job.append("Command: " + " ".join(job.args))
 
     try:
-        process = subprocess.Popen(
-            job.args,
-            cwd=str(ROOT),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-            start_new_session=True,
-        )
-        job.process = process
-        assert process.stdout is not None
-        for line in process.stdout:
-            job.append(line)
-        job.return_code = process.wait()
+        if job.kind == "archive_build":
+            run_archive_build(job)
+        else:
+            run_process(job, job.args)
         job.status = "succeeded" if job.return_code == 0 else "failed"
         job.append(f"Finished with exit code {job.return_code}")
     except Exception as exc:
@@ -340,7 +504,15 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 payload = read_json(self)
                 kind = str(payload.get("kind", "build")).strip()
-                args = extract_args(payload) if kind == "extract" else build_args(payload)
+                if kind == "extract":
+                    args = extract_args(payload)
+                    job_payload = {}
+                elif kind == "archive_build":
+                    args = []
+                    job_payload = archive_build_payload(payload)
+                else:
+                    args = build_args(payload)
+                    job_payload = {}
             except Exception as exc:
                 json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
@@ -348,7 +520,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if active_job_id:
                     json_response(self, {"error": f"Job already running: {active_job_id}"}, HTTPStatus.CONFLICT)
                     return
-                job = Job(id=uuid.uuid4().hex[:12], args=args)
+                job = Job(id=uuid.uuid4().hex[:12], args=args, kind=kind, payload=job_payload)
                 jobs[job.id] = job
             threading.Thread(target=run_job, args=(job,), daemon=True).start()
             json_response(self, {"job": job_summary(job)}, HTTPStatus.CREATED)
