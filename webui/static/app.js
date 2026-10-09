@@ -1,12 +1,15 @@
 const form = document.querySelector("#build-form");
+const archiveForm = document.querySelector("#archive-form");
 const extractForm = document.querySelector("#extract-form");
 const runtime = document.querySelector("#runtime");
 const log = document.querySelector("#log");
 const jobState = document.querySelector("#job-state");
 const startButton = document.querySelector("#start");
+const archiveButton = document.querySelector("#archive-start");
 const extractButton = document.querySelector("#extract");
 const cancelButton = document.querySelector("#cancel");
 const compression = form.elements.compressionLevel;
+const archiveCompression = archiveForm.elements.compressionLevel;
 const browserDialog = document.querySelector("#browser");
 const browserPath = document.querySelector("#browser-path");
 const browserRoots = document.querySelector("#browser-roots");
@@ -15,7 +18,7 @@ const browserSelect = document.querySelector("#browser-select");
 
 let activeJobId = null;
 let pollTimer = null;
-let browseTarget = null;
+let browseInput = null;
 let browseType = "any";
 let currentBrowsePath = "/";
 
@@ -25,6 +28,7 @@ for (let level = -4; level <= 9; level += 1) {
   option.textContent = String(level);
   if (level === 7) option.selected = true;
   compression.append(option);
+  archiveCompression.append(option.cloneNode(true));
 }
 
 function asPayload() {
@@ -51,6 +55,22 @@ function asExtractPayload() {
     kind: "extract",
     package: data.get("package"),
     destination: data.get("destination"),
+  };
+}
+
+function asArchivePayload() {
+  const data = new FormData(archiveForm);
+  return {
+    kind: "archive_build",
+    archive: data.get("archive"),
+    outputFolder: data.get("outputFolder"),
+    basePackage: data.get("basePackage"),
+    gameArchive: data.get("gameArchive"),
+    gameFolder: data.get("gameFolder"),
+    name: data.get("name"),
+    compressionLevel: data.get("compressionLevel"),
+    keepWork: data.get("keepWork") === "on",
+    force: data.get("force") === "on",
   };
 }
 
@@ -86,6 +106,7 @@ async function pollJob() {
   log.scrollTop = log.scrollHeight;
   const running = payload.job.status === "queued" || payload.job.status === "running";
   startButton.disabled = running;
+  archiveButton.disabled = running;
   extractButton.disabled = running;
   cancelButton.disabled = !running;
   if (!running) {
@@ -98,6 +119,7 @@ async function pollJob() {
 
 async function startJob(payload) {
   startButton.disabled = true;
+  archiveButton.disabled = true;
   extractButton.disabled = true;
   log.textContent = "";
   try {
@@ -115,6 +137,7 @@ async function startJob(payload) {
     jobState.textContent = "Error";
     log.textContent = error.message;
     startButton.disabled = false;
+    archiveButton.disabled = false;
     extractButton.disabled = false;
   }
 }
@@ -122,12 +145,12 @@ async function startJob(payload) {
 function selectTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
   form.classList.toggle("hidden", name !== "build");
+  archiveForm.classList.toggle("hidden", name !== "archive");
   extractForm.classList.toggle("hidden", name !== "extract");
 }
 
-function setInputValue(name, value) {
-  const input = document.querySelector(`[name="${name}"]`);
-  if (input) input.value = value;
+function setInputValue(value) {
+  if (browseInput) browseInput.value = value;
 }
 
 async function loadBrowse(path = currentBrowsePath) {
@@ -161,7 +184,7 @@ async function loadBrowse(path = currentBrowsePath) {
         }
         loadBrowse(entry.path);
       } else {
-        setInputValue(browseTarget, entry.path);
+        setInputValue(entry.path);
         browserDialog.close();
       }
     });
@@ -172,6 +195,11 @@ async function loadBrowse(path = currentBrowsePath) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   await startJob(asPayload());
+});
+
+archiveForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await startJob(asArchivePayload());
 });
 
 extractForm.addEventListener("submit", async (event) => {
@@ -197,10 +225,9 @@ document.querySelectorAll(".tab").forEach((tab) => {
 
 document.querySelectorAll(".browse").forEach((button) => {
   button.addEventListener("click", async () => {
-    browseTarget = button.dataset.target;
+    browseInput = button.closest(".path-row")?.querySelector("input") || null;
     browseType = button.dataset.type || "any";
-    const input = document.querySelector(`[name="${browseTarget}"]`);
-    currentBrowsePath = input?.value || "/mnt/user";
+    currentBrowsePath = browseInput?.value || "/mnt/user";
     browserDialog.showModal();
     await loadBrowse(currentBrowsePath).catch(async () => loadBrowse("/mnt/user"));
   });
@@ -212,7 +239,7 @@ browserRoots.addEventListener("click", (event) => {
 });
 
 browserSelect.addEventListener("click", () => {
-  setInputValue(browseTarget, currentBrowsePath);
+  setInputValue(currentBrowsePath);
   browserDialog.close();
 });
 
