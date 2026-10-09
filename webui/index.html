@@ -17,23 +17,40 @@
       </section>
 
       <section class="panel">
+        <div class="tabs">
+          <button type="button" class="tab active" data-tab="build">Build</button>
+          <button type="button" class="tab" data-tab="extract">Extract</button>
+        </div>
+
         <form id="build-form" class="form">
           <div class="grid">
             <label>
               <span>Game folder</span>
-              <input name="gameFolder" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app">
+              <div class="path-row">
+                <input name="gameFolder" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app">
+                <button type="button" class="browse" data-target="gameFolder" data-type="dir">Browse</button>
+              </div>
             </label>
             <label>
               <span>Backport folder</span>
-              <input name="backportFolder" autocomplete="off" placeholder="/mnt/user/backports/PPSA12345">
+              <div class="path-row">
+                <input name="backportFolder" autocomplete="off" placeholder="/mnt/user/backports/PPSA12345">
+                <button type="button" class="browse" data-target="backportFolder" data-type="dir">Browse</button>
+              </div>
             </label>
             <label>
               <span>Output folder</span>
-              <input name="outputFolder" autocomplete="off" required placeholder="/mnt/user/fpkg-output">
+              <div class="path-row">
+                <input name="outputFolder" autocomplete="off" required placeholder="/mnt/user/fpkg-output">
+                <button type="button" class="browse" data-target="outputFolder" data-type="dir">Browse</button>
+              </div>
             </label>
             <label>
               <span>Work folder</span>
-              <input name="workFolder" autocomplete="off" placeholder="/mnt/cache/appdata/fpkg-builder/work">
+              <div class="path-row">
+                <input name="workFolder" autocomplete="off" placeholder="/mnt/cache/appdata/fpkg-builder/work">
+                <button type="button" class="browse" data-target="workFolder" data-type="dir">Browse</button>
+              </div>
             </label>
             <label>
               <span>Name</span>
@@ -68,6 +85,29 @@
             <button type="button" id="cancel" disabled>Cancel</button>
           </div>
         </form>
+
+        <form id="extract-form" class="form hidden">
+          <div class="grid">
+            <label>
+              <span>Package</span>
+              <div class="path-row">
+                <input name="package" autocomplete="off" required placeholder="/mnt/user/fpkg-output/PPSA12345.pkg">
+                <button type="button" class="browse" data-target="package" data-type="file">Browse</button>
+              </div>
+            </label>
+            <label>
+              <span>Extract into</span>
+              <div class="path-row">
+                <input name="destination" autocomplete="off" required placeholder="/mnt/user/fpkg-output/extracted/PPSA12345">
+                <button type="button" class="browse" data-target="destination" data-type="dir">Browse</button>
+              </div>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" id="extract">Extract package</button>
+          </div>
+        </form>
       </section>
 
       <section class="panel log-panel">
@@ -78,6 +118,18 @@
         <pre id="log"></pre>
       </section>
     </main>
+    <dialog id="browser">
+      <div class="browser-head">
+        <strong>Select path</strong>
+        <button type="button" id="browser-close">Close</button>
+      </div>
+      <div id="browser-path"></div>
+      <div id="browser-roots"></div>
+      <div id="browser-list"></div>
+      <div class="browser-actions">
+        <button type="button" id="browser-select">Use current folder</button>
+      </div>
+    </dialog>
     <script src="/static/app.js"></script>
   </body>
 </html>
