@@ -19,6 +19,7 @@
       <section class="panel">
         <div class="tabs">
           <button type="button" class="tab active" data-tab="build">Build</button>
+          <button type="button" class="tab" data-tab="archive">Archive Build</button>
           <button type="button" class="tab" data-tab="extract">Extract</button>
         </div>
 
@@ -83,6 +84,63 @@
           <div class="actions">
             <button type="submit" id="start">Start build</button>
             <button type="button" id="cancel" disabled>Cancel</button>
+          </div>
+        </form>
+
+        <form id="archive-form" class="form hidden">
+          <div class="grid">
+            <label>
+              <span>Main archive</span>
+              <div class="path-row">
+                <input name="archive" autocomplete="off" required placeholder="/mnt/user/NZB/fpkg-fixes/backport.zip">
+                <button type="button" class="browse" data-target="archive" data-type="file">Browse</button>
+              </div>
+            </label>
+            <label>
+              <span>Output folder</span>
+              <div class="path-row">
+                <input name="outputFolder" autocomplete="off" required value="/mnt/user/fpkg-output">
+                <button type="button" class="browse" data-target="outputFolder" data-type="dir">Browse</button>
+              </div>
+            </label>
+            <label>
+              <span>Base PKG</span>
+              <div class="path-row">
+                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/fpkg-output/PPSA12345.pkg">
+                <button type="button" class="browse" data-target="basePackage" data-type="file">Browse</button>
+              </div>
+            </label>
+            <label>
+              <span>Game archive</span>
+              <div class="path-row">
+                <input name="gameArchive" autocomplete="off" placeholder="/mnt/user/NZB/fpkg-fixes/game-dump.zip">
+                <button type="button" class="browse" data-target="gameArchive" data-type="file">Browse</button>
+              </div>
+            </label>
+            <label>
+              <span>Game folder</span>
+              <div class="path-row">
+                <input name="gameFolder" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app">
+                <button type="button" class="browse" data-target="gameFolder" data-type="dir">Browse</button>
+              </div>
+            </label>
+            <label>
+              <span>Name</span>
+              <input name="name" autocomplete="off" placeholder="Auto from Base PKG or titleId">
+            </label>
+          </div>
+
+          <div class="options">
+            <label>
+              <span>Compression</span>
+              <select name="compressionLevel"></select>
+            </label>
+            <label class="check"><input type="checkbox" name="keepWork"> Keep work</label>
+            <label class="check"><input type="checkbox" name="force"> Overwrite output</label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" id="archive-start">Unpack and build</button>
           </div>
         </form>
 
