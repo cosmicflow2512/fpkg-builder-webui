@@ -22,6 +22,18 @@ docker run --rm -p 8080:8080 \
   fpkg-builder-webui:local
 ```
 
+## Archive build workflow
+
+Use the `Archive Build` tab when the input is already packed.
+
+- `Main archive` can be a zipped game dump or a zipped backport folder.
+- If the main archive is a backport folder, select either an existing `Base PKG`, a
+  `Game archive`, or a `Game folder`.
+- Existing base fPKGs are copied into the output folder as `<name>.pkg` when
+  needed, then the normal backport build is started.
+- ZIP and TAR archives are extracted directly. Other archive formats are passed to
+  `7z` when it is available in the container.
+
 ## Unraid
 
 1. Upload this repository to `https://github.com/cosmicflow2512/fpkg-builder-webui`.
