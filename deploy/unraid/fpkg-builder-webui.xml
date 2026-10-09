@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>fpkg-builder-webui</Name>
+  <Repository>ghcr.io/cosmicflow2512/fpkg-builder-webui:latest</Repository>
+  <Registry>https://github.com/cosmicflow2512/fpkg-builder-webui</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/cosmicflow2512/fpkg-builder-webui</Support>
+  <Project>https://github.com/cosmicflow2512/fpkg-builder-webui</Project>
+  <Overview>WebUI wrapper for fPKG Builder. The upstream builder uses Windows PowerShell scripts and Windows publisher tools; make sure your runtime can execute the configured toolchain.</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="Port for the fPKG Builder WebUI." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Games" Target="/mnt/user/games" Default="/mnt/user/games" Mode="rw" Description="Game dump share mounted into the container." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/games</Config>
+  <Config Name="Backports" Target="/mnt/user/backports" Default="/mnt/user/backports" Mode="rw" Description="Backport files share mounted into the container." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/backports</Config>
+  <Config Name="Output" Target="/mnt/user/fpkg-output" Default="/mnt/user/fpkg-output" Mode="rw" Description="Output folder for generated packages." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/fpkg-output</Config>
+  <Config Name="Appdata Work" Target="/mnt/cache/appdata/fpkg-builder" Default="/mnt/cache/appdata/fpkg-builder" Mode="rw" Description="Scratch/work folder for builds." Type="Path" Display="always" Required="false" Mask="false">/mnt/cache/appdata/fpkg-builder</Config>
+  <Config Name="FPKG_REPO_ROOT" Target="FPKG_REPO_ROOT" Default="/app/fpkg-builder" Description="Path to the fPKG Builder repository inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">/app/fpkg-builder</Config>
+  <Config Name="FPKG_POWERSHELL" Target="FPKG_POWERSHELL" Default="pwsh" Description="PowerShell executable used by the WebUI runner." Type="Variable" Display="advanced" Required="true" Mask="false">pwsh</Config>
+  <Config Name="FPKG_PYTHON" Target="FPKG_PYTHON" Default="python3" Description="Python executable passed to build-fpkg.ps1." Type="Variable" Display="advanced" Required="true" Mask="false">python3</Config>
+</Container>
