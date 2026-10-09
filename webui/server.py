@@ -18,7 +18,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from mimetypes import guess_type
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(os.environ.get("FPKG_REPO_ROOT", Path(__file__).resolve().parents[1])).resolve()
@@ -29,6 +29,14 @@ PORT = int(os.environ.get("FPKG_WEB_PORT", "8080"))
 POWERSHELL = os.environ.get("FPKG_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell.exe")
 PYTHON = os.environ.get("FPKG_PYTHON") or shutil.which("python3") or shutil.which("python") or "python"
 MAX_LOG_LINES = int(os.environ.get("FPKG_MAX_LOG_LINES", "4000"))
+BROWSE_ROOTS = [
+    Path(path).resolve()
+    for path in os.environ.get(
+        "FPKG_BROWSE_ROOTS",
+        "/mnt/user:/mnt/cache/appdata:/app/fpkg-builder",
+    ).split(":")
+    if path
+]
 
 
 @dataclass
@@ -93,10 +101,75 @@ def status_payload() -> dict[str, Any]:
         "python": PYTHON,
         "scripts": {name: {"path": str(path), "exists": path.exists()} for name, path in scripts.items()},
         "canStart": bool(POWERSHELL) and scripts["build"].exists(),
+        "browseRoots": [str(path) for path in BROWSE_ROOTS],
         "notes": [
             "The upstream builder is Windows/PowerShell oriented and ships Windows .exe publisher tools.",
             "On Linux/Unraid, the WebUI can launch the configured PowerShell command, but the publisher toolchain still needs a compatible runtime.",
         ],
+    }
+
+
+def publisher_path() -> Path:
+    return ROOT / "toolchain" / "prospero-pub-cmd.exe"
+
+
+def pkg_info(package: str) -> dict[str, Any] | None:
+    info_script = ROOT / "scripts" / "pkg-info.py"
+    if not info_script.exists():
+        return None
+    try:
+        raw = subprocess.check_output(
+            [PYTHON, str(info_script), package],
+            cwd=str(ROOT),
+            text=True,
+            stderr=subprocess.STDOUT,
+        )
+        return json.loads(raw[raw.index("{") :])
+    except Exception:
+        return None
+
+
+def path_allowed(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except FileNotFoundError:
+        resolved = path.absolute()
+    for root in BROWSE_ROOTS:
+        if resolved == root or root in resolved.parents:
+            return True
+    return False
+
+
+def browse_payload(raw_path: str, want: str) -> dict[str, Any]:
+    path = Path(raw_path or str(BROWSE_ROOTS[0])).expanduser()
+    if not path_allowed(path):
+        raise ValueError(f"Path is outside allowed browse roots: {path}")
+    if not path.exists():
+        raise ValueError(f"Path does not exist: {path}")
+    if path.is_file():
+        path = path.parent
+    entries = []
+    for child in sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())):
+        if child.name.startswith("."):
+            continue
+        if not path_allowed(child):
+            continue
+        is_dir = child.is_dir()
+        if want == "dir" and not is_dir:
+            continue
+        entries.append(
+            {
+                "name": child.name,
+                "path": str(child),
+                "type": "dir" if is_dir else "file",
+                "size": child.stat().st_size if child.is_file() else None,
+            }
+        )
+    return {
+        "path": str(path),
+        "parent": str(path.parent) if path.parent != path and path_allowed(path.parent) else None,
+        "roots": [str(root) for root in BROWSE_ROOTS],
+        "entries": entries,
     }
 
 
@@ -158,6 +231,29 @@ def build_args(payload: dict[str, Any]) -> list[str]:
     return args
 
 
+def extract_args(payload: dict[str, Any]) -> list[str]:
+    publisher = publisher_path()
+    if not publisher.exists():
+        raise ValueError(f"Missing publisher tool: {publisher}")
+    package = str(payload.get("package", "")).strip()
+    destination = str(payload.get("destination", "")).strip()
+    if not package:
+        raise ValueError("Package is required.")
+    if not Path(package).is_file():
+        raise ValueError(f"Package does not exist or is not a file: {package}")
+    if not destination:
+        raise ValueError("Destination folder is required.")
+    destination_path = Path(destination)
+    if destination_path.exists() and destination_path.is_file():
+        raise ValueError(f"Destination is a file, not a folder: {destination}")
+    destination_path.mkdir(parents=True, exist_ok=True)
+
+    info = pkg_info(package)
+    is_patch = bool(info and info.get("kind") == "ps5-delta")
+    passcode_args = ["--no_passcode"] if is_patch else ["--passcode", "0" * 32]
+    return [str(publisher), "img_extract"] + passcode_args + ["--no_progress_bar", package, destination]
+
+
 def run_job(job: Job) -> None:
     global active_job_id
     with jobs_lock:
@@ -212,6 +308,15 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/status":
             json_response(self, status_payload())
             return
+        if path == "/api/browse":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                payload = browse_payload(query.get("path", [""])[0], query.get("type", ["any"])[0])
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            json_response(self, payload)
+            return
         if path == "/api/jobs":
             with jobs_lock:
                 payload = {"activeJobId": active_job_id, "jobs": [job_summary(job) for job in jobs.values()]}
@@ -234,7 +339,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/jobs":
             try:
                 payload = read_json(self)
-                args = build_args(payload)
+                kind = str(payload.get("kind", "build")).strip()
+                args = extract_args(payload) if kind == "extract" else build_args(payload)
             except Exception as exc:
                 json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
