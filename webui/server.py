@@ -345,6 +345,11 @@ def build_args(payload: dict[str, Any]) -> list[str]:
     return args
 
 
+def effective_work_folder(value: str = "") -> str:
+    work_folder = str(value or "").strip() or str(load_settings().get("defaultWork", "")).strip()
+    return work_folder or "/config/work"
+
+
 def import_root() -> Path:
     return Path(os.environ.get("FPKG_IMPORT_ROOT", "/config/imports"))
 
@@ -664,6 +669,7 @@ def run_archive_build(job: Job) -> None:
     build_payload: dict[str, Any] = {
         "outputFolder": payload["outputFolder"],
         "compressionLevel": payload.get("compressionLevel", "4"),
+        "workFolder": effective_work_folder(payload.get("workFolder", "")),
         "force": payload.get("force", False),
         "keepWork": payload.get("keepWork", False),
     }
@@ -693,10 +699,11 @@ def run_folder_backport(job: Job) -> None:
         "backportFolder": payload["backportFolder"],
         "outputFolder": payload["outputFolder"],
         "compressionLevel": payload.get("compressionLevel", "4"),
+        "workFolder": effective_work_folder(payload.get("workFolder", "")),
         "force": payload.get("force", False),
         "keepWork": payload.get("keepWork", False),
     }
-    for key in ("gameFolder", "name", "workFolder"):
+    for key in ("gameFolder", "name"):
         if payload.get(key):
             build_payload[key] = payload[key]
     base_package = payload.get("basePackage", "")
@@ -756,7 +763,7 @@ def run_pair_build(job: Job) -> None:
         "backportFolder": str(backport_folder),
         "name": payload.get("name", ""),
         "compressionLevel": payload.get("compressionLevel", "4"),
-        "workFolder": payload.get("workFolder", "") or "/config/work",
+        "workFolder": effective_work_folder(payload.get("workFolder", "")),
         "force": payload.get("force", False),
         "keepWork": payload.get("keepWork", False),
         "rebuildBase": payload.get("rebuildBase", False),
