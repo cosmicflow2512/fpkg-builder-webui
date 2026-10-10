@@ -618,7 +618,9 @@ def apply_base_source(payload: dict[str, Any], build_payload: dict[str, Any], jo
             extracted_base = extract_to_import(base_path, job, "base")
             if contains_game_dump(extracted_base):
                 job.append(f"Base archive looks like a game dump: {extracted_base}")
+                job.append("Base archive/folder was supplied as source; rebuilding the base package instead of reusing an existing output PKG.")
                 build_payload["gameFolder"] = str(extracted_base)
+                build_payload["rebuildBase"] = True
                 return
             base_path = resolve_base_package(str(extracted_base), str(build_payload.get("name", "")))
         else:
@@ -639,10 +641,12 @@ def apply_base_source(payload: dict[str, Any], build_payload: dict[str, Any], jo
         if not contains_game_dump(game_source):
             raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
         build_payload["gameFolder"] = str(game_source)
+        build_payload["rebuildBase"] = True
         return
 
     if game_folder:
         build_payload["gameFolder"] = game_folder
+        build_payload["rebuildBase"] = True
 
 
 def extract_args(payload: dict[str, Any]) -> list[str]:
@@ -790,7 +794,7 @@ def run_pair_build(job: Job) -> None:
         "workFolder": job_work_folder(job, payload.get("workFolder", "")),
         "force": payload.get("force", False),
         "keepWork": payload.get("keepWork", False),
-        "rebuildBase": payload.get("rebuildBase", False),
+        "rebuildBase": True,
     }
     args = build_args(build_payload)
     run_process(job, args)
