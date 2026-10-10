@@ -15,14 +15,12 @@ Open `http://localhost:8080`.
 ```bash
 docker build -f Dockerfile.webui -t fpkg-builder-webui:local .
 docker run --rm -p 8088:8080 \
-  -v /mnt/user/NZB:/shares/NZB \
-  -v /mnt/user/NZB/fpkg-fixes/fpkg-output:/output \
-  -v /mnt/cache/appdata/fpkg-builder-webui:/config \
-  -e FPKG_CONFIG_ROOT=/config \
-  -e FPKG_IMPORT_ROOT=/config/imports \
-  -e FPKG_DEFAULT_OUTPUT=/output \
-  -e FPKG_DEFAULT_WORK=/config/work \
-  -e FPKG_BROWSE_ROOTS=/shares:/output:/config:/app/fpkg-builder \
+  -v /mnt/user/NZB:/mnt/user/NZB \
+  -v /mnt/user/NZB/fpkg-fixes/fpkg-output:/mnt/user/fpkg-output \
+  -v /mnt/cache/appdata/fpkg-builder-webui:/mnt/cache/appdata/fpkg-builder \
+  -e FPKG_CONFIG_ROOT=/mnt/cache/appdata/fpkg-builder \
+  -e FPKG_IMPORT_ROOT=/mnt/cache/appdata/fpkg-builder/imports \
+  -e FPKG_BROWSE_ROOTS=/mnt/user:/mnt/cache/appdata:/app/fpkg-builder \
   fpkg-builder-webui:local
 ```
 
