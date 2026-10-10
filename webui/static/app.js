@@ -17,6 +17,9 @@ const diagnostics = document.querySelector("#diagnostics");
 const progressTitle = document.querySelector("#progress-title");
 const progressSubtitle = document.querySelector("#progress-subtitle");
 const progressFill = document.querySelector("#progress-fill");
+const modeHint = document.querySelector("#mode-hint");
+const sourceLabel = document.querySelector("#source-label");
+const sourceHint = document.querySelector("#source-hint");
 
 let activeJobId = null;
 let pollTimer = null;
@@ -45,6 +48,12 @@ function formValue(name) {
   return String(new FormData(jobForm).get(name) || "").trim();
 }
 
+function containerWorkPath(path) {
+  const value = String(path || "").trim();
+  if (!value || value.startsWith("/mnt/cache/appdata/fpkg-builder")) return "/config/work";
+  return value;
+}
+
 function payloadFromForm() {
   const data = new FormData(jobForm);
   const source = String(data.get("source") || "").trim();
@@ -60,7 +69,7 @@ function payloadFromForm() {
     force: data.get("force") === "on",
   };
 
-  if (mode === "extract" || isPackage(source)) {
+  if (mode === "extract") {
     return {
       kind: "extract",
       package: source,
@@ -75,21 +84,23 @@ function payloadFromForm() {
     return { ...payload, gameFolder: source };
   }
 
-  if (mode === "backport" && !isArchive(source)) {
+  if (mode === "backport-only") {
+    if (isArchive(source)) {
+      return { ...payload, kind: "archive_build", archive: source };
+    }
     return {
       ...payload,
       kind: "folder_backport",
       backportFolder: source,
-      basePackage: data.get("basePackage"),
-      gameFolder: gameSource && !isArchive(gameSource) ? gameSource : "",
     };
   }
 
-  if (mode === "backport" || isArchive(source)) {
+  if (mode === "backport-base") {
     return {
       ...payload,
-      kind: "archive_build",
-      archive: source,
+      kind: isArchive(source) ? "archive_build" : "folder_backport",
+      archive: isArchive(source) ? source : undefined,
+      backportFolder: isArchive(source) ? undefined : source,
       basePackage: data.get("basePackage"),
       gameArchive: isArchive(gameSource) ? gameSource : "",
       gameFolder: gameSource && !isArchive(gameSource) ? gameSource : "",
@@ -119,6 +130,51 @@ function renderRuntime(status) {
     ${missing.length ? `<span>Fehlt: ${missing.join(", ")}</span>` : ""}
   `;
   startButton.disabled = !status.canStart;
+}
+
+const modeUi = {
+  game: {
+    sourceLabel: "Game/RAW-Quelle",
+    sourcePlaceholder: "/mnt/user/NZB/game-dump-oder-raw.zip",
+    sourceHint: "Game-Dump-Ordner oder Archiv. Archive werden erst entpackt, danach wird daraus eine FPKG gebaut.",
+    hint: "Aus einem Game/RAW-Dump eine FPKG bauen.",
+    fields: ["source", "output", "name"],
+  },
+  "backport-base": {
+    sourceLabel: "Backport-Quelle",
+    sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
+    sourceHint: "Backport-Archiv oder entpackter Backport-Ordner.",
+    hint: "Backport mit einer vorhandenen Base-PKG bauen.",
+    fields: ["source", "output", "base", "name"],
+  },
+  "backport-only": {
+    sourceLabel: "Backport-Quelle",
+    sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
+    sourceHint: "Nur den Backport bauen. Der Name muss zur vorhandenen Base-PKG im Output passen, falls keine Base-PKG gewaehlt wird.",
+    hint: "Nur Backport-PKG bauen, wenn die passende Base schon im Output liegt.",
+    fields: ["source", "output", "name"],
+  },
+  extract: {
+    sourceLabel: "PKG zum Entpacken",
+    sourcePlaceholder: "/mnt/user/NZB/base-oder-patch.pkg",
+    sourceHint: "Eine vorhandene .pkg wird in den Output-Ordner entpackt.",
+    hint: "Nur entpacken, nichts neu bauen.",
+    fields: ["source", "output"],
+  },
+};
+
+function updateModeUi() {
+  const mode = formValue("mode") || "game";
+  const config = modeUi[mode] || modeUi.game;
+  const visible = new Set(config.fields);
+  document.querySelectorAll("[data-field]").forEach((field) => {
+    field.classList.toggle("hidden", !visible.has(field.dataset.field));
+  });
+  sourceLabel.textContent = config.sourceLabel;
+  sourceHint.textContent = config.sourceHint;
+  modeHint.textContent = config.hint;
+  jobForm.elements.source.placeholder = config.sourcePlaceholder;
+  jobForm.elements.basePackage.required = mode === "backport-base";
 }
 
 function renderJobs(jobs) {
@@ -277,12 +333,12 @@ async function loadPackages() {
 async function loadSettings() {
   const settings = await request("/api/settings");
   settingsForm.elements.defaultOutput.value = settings.defaultOutput || "/mnt/user/fpkg-output";
-  settingsForm.elements.defaultWork.value = settings.defaultWork || "/mnt/cache/appdata/fpkg-builder/work";
+  settingsForm.elements.defaultWork.value = containerWorkPath(settings.defaultWork);
   settingsForm.elements.archivePasswords.value = (settings.archivePasswords || []).join("\n");
   settingsForm.elements.overlapPrepare.checked = settings.overlapPrepare !== false;
   settingsForm.elements.verifyChecksums.checked = settings.verifyChecksums !== false;
   jobForm.elements.outputFolder.value = settings.defaultOutput || jobForm.elements.outputFolder.value;
-  jobForm.elements.workFolder.value = settings.defaultWork || "";
+  jobForm.elements.workFolder.value = containerWorkPath(settings.defaultWork);
 }
 
 async function saveSettings() {
@@ -330,6 +386,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 });
 
+jobForm.querySelectorAll('input[name="mode"]').forEach((input) => {
+  input.addEventListener("change", updateModeUi);
+});
+
 document.querySelectorAll(".browse").forEach((button) => {
   button.addEventListener("click", async () => {
     browseInput = button.closest(".path-row")?.querySelector("input") || null;
@@ -361,3 +421,4 @@ loadStatus().catch((error) => {
   startButton.disabled = true;
 });
 loadSettings().catch(() => {});
+updateModeUi();
