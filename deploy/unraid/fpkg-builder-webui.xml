@@ -9,7 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/cosmicflow2512/fpkg-builder-webui</Support>
   <Project>https://github.com/cosmicflow2512/fpkg-builder-webui</Project>
-  <Overview>WebUI wrapper for fPKG Builder. The upstream builder uses Windows PowerShell scripts and Windows publisher tools; make sure your runtime can execute the configured toolchain.</Overview>
+  <Overview>WebUI wrapper for fPKG Builder with archive import workflow. Mount your input share under /shares, appdata under /config, and output under /output.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
   <TemplateURL/>
@@ -21,14 +21,16 @@
   <DonateText/>
   <DonateLink/>
   <Requires/>
-  <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="Port for the fPKG Builder WebUI." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
-  <Config Name="Games" Target="/mnt/user/games" Default="/mnt/user/games" Mode="rw" Description="Game dump share mounted into the container." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/games</Config>
-  <Config Name="Backports" Target="/mnt/user/backports" Default="/mnt/user/backports" Mode="rw" Description="Backport files share mounted into the container." Type="Path" Display="always" Required="false" Mask="false">/mnt/user/backports</Config>
-  <Config Name="Output" Target="/mnt/user/fpkg-output" Default="/mnt/user/fpkg-output" Mode="rw" Description="Output folder for generated packages." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/fpkg-output</Config>
-  <Config Name="Appdata Work" Target="/mnt/cache/appdata/fpkg-builder" Default="/mnt/cache/appdata/fpkg-builder" Mode="rw" Description="Scratch/work folder for builds." Type="Path" Display="always" Required="false" Mask="false">/mnt/cache/appdata/fpkg-builder</Config>
+  <Config Name="WebUI Port" Target="8080" Default="8088" Mode="tcp" Description="Host port for the fPKG Builder WebUI. Container port stays 8080." Type="Port" Display="always" Required="true" Mask="false">8088</Config>
+  <Config Name="Input Share" Target="/shares/NZB" Default="/mnt/user/NZB" Mode="rw" Description="Share mounted into the container for ZIP/RAR/7z archives, game folders, backports and base PKGs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/NZB</Config>
+  <Config Name="Output" Target="/output" Default="/mnt/user/NZB/fpkg-fixes/fpkg-output" Mode="rw" Description="Output folder for generated packages." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/NZB/fpkg-fixes/fpkg-output</Config>
+  <Config Name="Appdata" Target="/config" Default="/mnt/cache/appdata/fpkg-builder-webui" Mode="rw" Description="Appdata folder for settings, imports and temporary work files." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/fpkg-builder-webui</Config>
   <Config Name="FPKG_REPO_ROOT" Target="FPKG_REPO_ROOT" Default="/app/fpkg-builder" Description="Path to the fPKG Builder repository inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">/app/fpkg-builder</Config>
   <Config Name="FPKG_POWERSHELL" Target="FPKG_POWERSHELL" Default="pwsh" Description="PowerShell executable used by the WebUI runner." Type="Variable" Display="advanced" Required="true" Mask="false">pwsh</Config>
   <Config Name="FPKG_PYTHON" Target="FPKG_PYTHON" Default="python3" Description="Python executable passed to build-fpkg.ps1." Type="Variable" Display="advanced" Required="true" Mask="false">python3</Config>
-  <Config Name="FPKG_IMPORT_ROOT" Target="FPKG_IMPORT_ROOT" Default="/mnt/cache/appdata/fpkg-builder/imports" Description="Temporary import folder for archives selected in the WebUI." Type="Variable" Display="advanced" Required="true" Mask="false">/mnt/cache/appdata/fpkg-builder/imports</Config>
-  <Config Name="FPKG_BROWSE_ROOTS" Target="FPKG_BROWSE_ROOTS" Default="/mnt/user:/mnt/cache/appdata:/app/fpkg-builder" Description="Colon-separated paths the WebUI file browser may browse." Type="Variable" Display="advanced" Required="true" Mask="false">/mnt/user:/mnt/cache/appdata:/app/fpkg-builder</Config>
+  <Config Name="FPKG_CONFIG_ROOT" Target="FPKG_CONFIG_ROOT" Default="/config" Description="Container path for WebUI settings." Type="Variable" Display="advanced" Required="true" Mask="false">/config</Config>
+  <Config Name="FPKG_IMPORT_ROOT" Target="FPKG_IMPORT_ROOT" Default="/config/imports" Description="Container path for temporary archive imports selected in the WebUI." Type="Variable" Display="advanced" Required="true" Mask="false">/config/imports</Config>
+  <Config Name="FPKG_DEFAULT_OUTPUT" Target="FPKG_DEFAULT_OUTPUT" Default="/output" Description="Default output folder shown in the WebUI." Type="Variable" Display="advanced" Required="true" Mask="false">/output</Config>
+  <Config Name="FPKG_DEFAULT_WORK" Target="FPKG_DEFAULT_WORK" Default="/config/work" Description="Default temporary work folder shown in the WebUI." Type="Variable" Display="advanced" Required="true" Mask="false">/config/work</Config>
+  <Config Name="FPKG_BROWSE_ROOTS" Target="FPKG_BROWSE_ROOTS" Default="/shares:/output:/config:/app/fpkg-builder" Description="Colon-separated container paths the WebUI file browser may browse." Type="Variable" Display="advanced" Required="true" Mask="false">/shares:/output:/config:/app/fpkg-builder</Config>
 </Container>
