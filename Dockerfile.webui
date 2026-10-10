@@ -4,10 +4,15 @@ ENV FPKG_REPO_ROOT=/app/fpkg-builder \
     FPKG_WEB_HOST=0.0.0.0 \
     FPKG_WEB_PORT=8080 \
     FPKG_POWERSHELL=pwsh \
-    FPKG_PYTHON=python3
+    FPKG_PYTHON=python3 \
+    FPKG_DEFAULT_WORK=/config/work \
+    LIBPROSPERO_TEMP_DIR=/config/work/publisher-temp \
+    WINEPREFIX=/config/wine \
+    WINEDEBUG=-all
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 ca-certificates p7zip-full unar wine wine64 \
+RUN dpkg --add-architecture i386 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3 ca-certificates p7zip-full unar wine wine64 wine32:i386 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/fpkg-builder
