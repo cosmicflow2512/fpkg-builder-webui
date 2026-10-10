@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  PATCH_COMMIT_MESSAGE: Fix backport base archive workflow
-
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -18,212 +15,212 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply patch
+      - name: Apply patch and remove temporary workflow
         shell: bash
         run: |
           cat > /tmp/fix.patch <<'PATCH'
-diff --git a/build-fpkg.ps1 b/build-fpkg.ps1
-index 9bce2ae..34a931b 100644
---- a/build-fpkg.ps1
-+++ b/build-fpkg.ps1
-@@ -216,7 +216,10 @@ if ($createBase) {
-                    '-CompressionLevel', [string]$CompressionLevel,
-                    '-ToolkitRoot', $toolkit)
-     if ($Force -or $RebuildBase) { $buildArgs += '-Force' }
--    & (Get-Command powershell.exe).Source @buildArgs 2>&1 | ForEach-Object { Write-Note $_ }
-+    $childPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
-+    if (-not $childPowerShell) { $childPowerShell = Get-Command pwsh -ErrorAction SilentlyContinue }
-+    if (-not $childPowerShell) { throw "Neither powershell.exe nor pwsh was found for the base package build." }
-+    & $childPowerShell.Source @buildArgs 2>&1 | ForEach-Object { Write-Note $_ }
-     if ($LASTEXITCODE -ne 0) { throw "Base package build failed with exit code $LASTEXITCODE" }
-     if (-not (Test-Path -LiteralPath $base -PathType Leaf)) {
-         throw "The base build reported success but produced nothing at $base"
-diff --git a/webui/README.md b/webui/README.md
-index 8b83faa..7527680 100644
---- a/webui/README.md
-+++ b/webui/README.md
-@@ -29,8 +29,8 @@ docker run --rm -p 8088:8080 \
- Use the `Archive Build` tab when the input is already packed.
- 
- - `Main archive` can be a zipped game dump or a zipped backport folder.
--- If the main archive is a backport folder, select either an existing `Base PKG`, a
--  `Game archive`, or a `Game folder`.
-+- If the main archive is a backport folder, select either an existing `Base PKG`,
-+  a folder containing the base package, a `Game archive`, or a `Game folder`.
- - Existing base fPKGs are copied into the output folder as `<name>.pkg` when
-   needed, then the normal backport build is started.
- - ZIP and TAR archives are extracted directly. RAR archives are extracted with
-diff --git a/webui/index.html b/webui/index.html
-index 484bd2e..bf471e3 100644
---- a/webui/index.html
-+++ b/webui/index.html
-@@ -56,12 +56,12 @@
-             </label>
- 
-             <label data-field="base">
--              <span>2. Base PKG oder Base-Ordner</span>
-+              <span>2. Base PKG, Archiv oder Ordner</span>
-               <div class="path-row">
--                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/NZB/base-ordner-oder/PPSA12345.pkg">
-+                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/NZB/base.pkg oder game.part001.rar">
-                 <button type="button" class="browse" data-type="any">...</button>
-               </div>
--              <small>Direkte .pkg oder ein Ordner, in dem die Base-PKG liegt.</small>
-+              <small>Direkte .pkg, Base-Ordner oder Game/RAW-Archiv, aus dem die Base gebaut wird.</small>
-             </label>
- 
-             <label data-field="game-source">
-diff --git a/webui/server.py b/webui/server.py
-index 1095681..5664f0b 100644
---- a/webui/server.py
-+++ b/webui/server.py
-@@ -574,6 +574,52 @@ def resolve_base_package(path_text: str, preferred_name: str = "") -> Path:
-     raise ValueError(f"Base folder contains multiple .pkg files ({examples}). Select the exact Base PKG file.")
- 
- 
-+def apply_base_source(payload: dict[str, Any], build_payload: dict[str, Any], job: Job) -> None:
-+    base_source = str(payload.get("basePackage", "")).strip()
-+    game_archive = str(payload.get("gameArchive", "")).strip()
-+    game_folder = str(payload.get("gameFolder", "")).strip()
-+
-+    if base_source:
-+        base_path = Path(base_source)
-+        if base_path.is_file() and base_path.suffix.lower() != ".pkg":
-+            job.append(f"Base archive: {base_path}")
-+            extracted_base = extract_to_import(base_path, job, "base")
-+            if contains_game_dump(extracted_base):
-+                job.append(f"Base archive looks like a game dump: {extracted_base}")
-+                build_payload["gameFolder"] = str(extracted_base)
-+                return
-+            base_path = resolve_base_package(str(extracted_base), str(build_payload.get("name", "")))
-+        else:
-+            base_path = resolve_base_package(base_source, str(build_payload.get("name", "")))
-+
-+        job.append(f"Base package: {base_path}")
-+        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
-+        build_payload["name"] = name
-+        output_dir = Path(payload["outputFolder"])
-+        output_dir.mkdir(parents=True, exist_ok=True)
-+        target_base = output_dir / f"{name}.pkg"
-+        if target_base.resolve() != base_path.resolve():
-+            if target_base.exists() and not payload.get("force"):
-+                job.append(f"Using existing base package: {target_base}")
-+            else:
-+                job.append(f"Copying base package to: {target_base}")
-+                shutil.copy2(base_path, target_base)
-+        return
-+
-+    if game_archive:
-+        game_archive_path = Path(game_archive)
-+        if not game_archive_path.is_file():
-+            raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
-+        game_source = extract_to_import(game_archive_path, job, "game")
-+        if not contains_game_dump(game_source):
-+            raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
-+        build_payload["gameFolder"] = str(game_source)
-+        return
-+
-+    if game_folder:
-+        build_payload["gameFolder"] = game_folder
-+
-+
- def extract_args(payload: dict[str, Any]) -> list[str]:
-     publisher = publisher_path()
-     if not publisher.exists():
-@@ -628,41 +674,15 @@ def run_archive_build(job: Job) -> None:
-     if payload.get("name"):
-         build_payload["name"] = payload["name"]
- 
--    if contains_game_dump(source):
-+    has_base_source = bool(payload.get("basePackage") or payload.get("gameArchive") or payload.get("gameFolder"))
-+    if contains_game_dump(source) and not has_base_source:
-         job.append(f"Archive looks like a game dump: {source}")
-         build_payload["gameFolder"] = str(source)
-     else:
--        game_folder = payload.get("gameFolder", "")
--        game_archive = payload.get("gameArchive", "")
--        base_package = payload.get("basePackage", "")
-         job.append(f"Archive looks like backport files: {source}")
-         build_payload["backportFolder"] = str(source)
--
--        if base_package:
--            base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
--            job.append(f"Base package: {base_path}")
--            name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
--            build_payload["name"] = name
--            output_dir = Path(payload["outputFolder"])
--            output_dir.mkdir(parents=True, exist_ok=True)
--            target_base = output_dir / f"{name}.pkg"
--            if target_base.resolve() != base_path.resolve():
--                if target_base.exists() and not payload.get("force"):
--                    job.append(f"Using existing base package: {target_base}")
--                else:
--                    job.append(f"Copying base package to: {target_base}")
--                    shutil.copy2(base_path, target_base)
--        elif game_archive:
--            game_archive_path = Path(game_archive)
--            if not game_archive_path.is_file():
--                raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
--            game_source = extract_to_import(game_archive_path, job, "game")
--            if not contains_game_dump(game_source):
--                raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
--            build_payload["gameFolder"] = str(game_source)
--        elif game_folder:
--            build_payload["gameFolder"] = game_folder
--        elif not payload.get("name"):
-+        apply_base_source(payload, build_payload, job)
-+        if not has_base_source and not payload.get("name"):
-             raise ValueError(
-                 "Backport-only archive needs a Base PKG, Game archive, Game folder, or a Name matching an existing base PKG in the output folder."
-             )
-@@ -685,19 +705,7 @@ def run_folder_backport(job: Job) -> None:
-             build_payload[key] = payload[key]
-     base_package = payload.get("basePackage", "")
-     if base_package:
--        base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
--        job.append(f"Base package: {base_path}")
--        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
--        build_payload["name"] = name
--        output_dir = Path(payload["outputFolder"])
--        output_dir.mkdir(parents=True, exist_ok=True)
--        target_base = output_dir / f"{name}.pkg"
--        if target_base.resolve() != base_path.resolve():
--            if target_base.exists() and not payload.get("force"):
--                job.append(f"Using existing base package: {target_base}")
--            else:
--                job.append(f"Copying base package to: {target_base}")
--                shutil.copy2(base_path, target_base)
-+        apply_base_source(payload, build_payload, job)
-     args = build_args(build_payload)
-     run_process(job, args)
- 
-diff --git a/webui/static/app.js b/webui/static/app.js
-index 605de96..631398a 100644
---- a/webui/static/app.js
-+++ b/webui/static/app.js
-@@ -37,7 +37,7 @@ for (let level = -4; level <= 9; level += 1) {
- }
- 
- function isArchive(path) {
--  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2)$/i.test(path || "");
-+  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2|part\d+\.rar|r\d{2,3}|z\d{2,3}|\d{3})$/i.test(path || "");
- }
- 
- function isPackage(path) {
-@@ -144,7 +144,7 @@ const modeUi = {
-     sourceLabel: "1. Backport ZIP/Ordner",
-     sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
-     sourceHint: "Hier kommt die Backport-ZIP, ein RAR/7z-Archiv oder der entpackte Backport-Ordner hinein.",
--    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG oder Base-Ordner auswaehlen.",
-+    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG, Base-Archiv oder Base-Ordner auswaehlen.",
-     fields: ["source", "output", "base", "name"],
-   },
-   "backport-only": {
-PATCH
+          diff --git a/build-fpkg.ps1 b/build-fpkg.ps1
+          index 9bce2ae..34a931b 100644
+          --- a/build-fpkg.ps1
+          +++ b/build-fpkg.ps1
+          @@ -216,7 +216,10 @@ if ($createBase) {
+                              '-CompressionLevel', [string]$CompressionLevel,
+                              '-ToolkitRoot', $toolkit)
+               if ($Force -or $RebuildBase) { $buildArgs += '-Force' }
+          -    & (Get-Command powershell.exe).Source @buildArgs 2>&1 | ForEach-Object { Write-Note $_ }
+          +    $childPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+          +    if (-not $childPowerShell) { $childPowerShell = Get-Command pwsh -ErrorAction SilentlyContinue }
+          +    if (-not $childPowerShell) { throw "Neither powershell.exe nor pwsh was found for the base package build." }
+          +    & $childPowerShell.Source @buildArgs 2>&1 | ForEach-Object { Write-Note $_ }
+               if ($LASTEXITCODE -ne 0) { throw "Base package build failed with exit code $LASTEXITCODE" }
+               if (-not (Test-Path -LiteralPath $base -PathType Leaf)) {
+                   throw "The base build reported success but produced nothing at $base"
+          diff --git a/webui/README.md b/webui/README.md
+          index 8b83faa..7527680 100644
+          --- a/webui/README.md
+          +++ b/webui/README.md
+          @@ -29,8 +29,8 @@ docker run --rm -p 8088:8080 \
+           Use the `Archive Build` tab when the input is already packed.
+           
+           - `Main archive` can be a zipped game dump or a zipped backport folder.
+          -- If the main archive is a backport folder, select either an existing `Base PKG`, a
+          -  `Game archive`, or a `Game folder`.
+          +- If the main archive is a backport folder, select either an existing `Base PKG`,
+          +  a folder containing the base package, a `Game archive`, or a `Game folder`.
+           - Existing base fPKGs are copied into the output folder as `<name>.pkg` when
+             needed, then the normal backport build is started.
+           - ZIP and TAR archives are extracted directly. RAR archives are extracted with
+          diff --git a/webui/index.html b/webui/index.html
+          index 484bd2e..bf471e3 100644
+          --- a/webui/index.html
+          +++ b/webui/index.html
+          @@ -56,12 +56,12 @@
+                       </label>
+           
+                       <label data-field="base">
+          -              <span>2. Base PKG oder Base-Ordner</span>
+          +              <span>2. Base PKG, Archiv oder Ordner</span>
+                         <div class="path-row">
+          -                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/NZB/base-ordner-oder/PPSA12345.pkg">
+          +                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/NZB/base.pkg oder game.part001.rar">
+                           <button type="button" class="browse" data-type="any">...</button>
+                         </div>
+          -              <small>Direkte .pkg oder ein Ordner, in dem die Base-PKG liegt.</small>
+          +              <small>Direkte .pkg, Base-Ordner oder Game/RAW-Archiv, aus dem die Base gebaut wird.</small>
+                       </label>
+           
+                       <label data-field="game-source">
+          diff --git a/webui/server.py b/webui/server.py
+          index 1095681..5664f0b 100644
+          --- a/webui/server.py
+          +++ b/webui/server.py
+          @@ -574,6 +574,52 @@ def resolve_base_package(path_text: str, preferred_name: str = "") -> Path:
+               raise ValueError(f"Base folder contains multiple .pkg files ({examples}). Select the exact Base PKG file.")
+           
+           
+          +def apply_base_source(payload: dict[str, Any], build_payload: dict[str, Any], job: Job) -> None:
+          +    base_source = str(payload.get("basePackage", "")).strip()
+          +    game_archive = str(payload.get("gameArchive", "")).strip()
+          +    game_folder = str(payload.get("gameFolder", "")).strip()
+          +
+          +    if base_source:
+          +        base_path = Path(base_source)
+          +        if base_path.is_file() and base_path.suffix.lower() != ".pkg":
+          +            job.append(f"Base archive: {base_path}")
+          +            extracted_base = extract_to_import(base_path, job, "base")
+          +            if contains_game_dump(extracted_base):
+          +                job.append(f"Base archive looks like a game dump: {extracted_base}")
+          +                build_payload["gameFolder"] = str(extracted_base)
+          +                return
+          +            base_path = resolve_base_package(str(extracted_base), str(build_payload.get("name", "")))
+          +        else:
+          +            base_path = resolve_base_package(base_source, str(build_payload.get("name", "")))
+          +
+          +        job.append(f"Base package: {base_path}")
+          +        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
+          +        build_payload["name"] = name
+          +        output_dir = Path(payload["outputFolder"])
+          +        output_dir.mkdir(parents=True, exist_ok=True)
+          +        target_base = output_dir / f"{name}.pkg"
+          +        if target_base.resolve() != base_path.resolve():
+          +            if target_base.exists() and not payload.get("force"):
+          +                job.append(f"Using existing base package: {target_base}")
+          +            else:
+          +                job.append(f"Copying base package to: {target_base}")
+          +                shutil.copy2(base_path, target_base)
+          +        return
+          +
+          +    if game_archive:
+          +        game_archive_path = Path(game_archive)
+          +        if not game_archive_path.is_file():
+          +            raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
+          +        game_source = extract_to_import(game_archive_path, job, "game")
+          +        if not contains_game_dump(game_source):
+          +            raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
+          +        build_payload["gameFolder"] = str(game_source)
+          +        return
+          +
+          +    if game_folder:
+          +        build_payload["gameFolder"] = game_folder
+          +
+          +
+           def extract_args(payload: dict[str, Any]) -> list[str]:
+               publisher = publisher_path()
+               if not publisher.exists():
+          @@ -628,41 +674,15 @@ def run_archive_build(job: Job) -> None:
+               if payload.get("name"):
+                   build_payload["name"] = payload["name"]
+           
+          -    if contains_game_dump(source):
+          +    has_base_source = bool(payload.get("basePackage") or payload.get("gameArchive") or payload.get("gameFolder"))
+          +    if contains_game_dump(source) and not has_base_source:
+                   job.append(f"Archive looks like a game dump: {source}")
+                   build_payload["gameFolder"] = str(source)
+               else:
+          -        game_folder = payload.get("gameFolder", "")
+          -        game_archive = payload.get("gameArchive", "")
+          -        base_package = payload.get("basePackage", "")
+                   job.append(f"Archive looks like backport files: {source}")
+                   build_payload["backportFolder"] = str(source)
+          -
+          -        if base_package:
+          -            base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
+          -            job.append(f"Base package: {base_path}")
+          -            name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
+          -            build_payload["name"] = name
+          -            output_dir = Path(payload["outputFolder"])
+          -            output_dir.mkdir(parents=True, exist_ok=True)
+          -            target_base = output_dir / f"{name}.pkg"
+          -            if target_base.resolve() != base_path.resolve():
+          -                if target_base.exists() and not payload.get("force"):
+          -                    job.append(f"Using existing base package: {target_base}")
+          -                else:
+          -                    job.append(f"Copying base package to: {target_base}")
+          -                    shutil.copy2(base_path, target_base)
+          -        elif game_archive:
+          -            game_archive_path = Path(game_archive)
+          -            if not game_archive_path.is_file():
+          -                raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
+          -            game_source = extract_to_import(game_archive_path, job, "game")
+          -            if not contains_game_dump(game_source):
+          -                raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
+          -            build_payload["gameFolder"] = str(game_source)
+          -        elif game_folder:
+          -            build_payload["gameFolder"] = game_folder
+          -        elif not payload.get("name"):
+          +        apply_base_source(payload, build_payload, job)
+          +        if not has_base_source and not payload.get("name"):
+                       raise ValueError(
+                           "Backport-only archive needs a Base PKG, Game archive, Game folder, or a Name matching an existing base PKG in the output folder."
+                       )
+          @@ -685,19 +705,7 @@ def run_folder_backport(job: Job) -> None:
+                       build_payload[key] = payload[key]
+               base_package = payload.get("basePackage", "")
+               if base_package:
+          -        base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
+          -        job.append(f"Base package: {base_path}")
+          -        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
+          -        build_payload["name"] = name
+          -        output_dir = Path(payload["outputFolder"])
+          -        output_dir.mkdir(parents=True, exist_ok=True)
+          -        target_base = output_dir / f"{name}.pkg"
+          -        if target_base.resolve() != base_path.resolve():
+          -            if target_base.exists() and not payload.get("force"):
+          -                job.append(f"Using existing base package: {target_base}")
+          -            else:
+          -                job.append(f"Copying base package to: {target_base}")
+          -                shutil.copy2(base_path, target_base)
+          +        apply_base_source(payload, build_payload, job)
+               args = build_args(build_payload)
+               run_process(job, args)
+           
+          diff --git a/webui/static/app.js b/webui/static/app.js
+          index 605de96..631398a 100644
+          --- a/webui/static/app.js
+          +++ b/webui/static/app.js
+          @@ -37,7 +37,7 @@ for (let level = -4; level <= 9; level += 1) {
+           }
+           
+           function isArchive(path) {
+          -  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2)$/i.test(path || "");
+          +  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2|part\d+\.rar|r\d{2,3}|z\d{2,3}|\d{3})$/i.test(path || "");
+           }
+           
+           function isPackage(path) {
+          @@ -144,7 +144,7 @@ const modeUi = {
+               sourceLabel: "1. Backport ZIP/Ordner",
+               sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
+               sourceHint: "Hier kommt die Backport-ZIP, ein RAR/7z-Archiv oder der entpackte Backport-Ordner hinein.",
+          -    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG oder Base-Ordner auswaehlen.",
+          +    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG, Base-Archiv oder Base-Ordner auswaehlen.",
+               fields: ["source", "output", "base", "name"],
+             },
+             "backport-only": {
+          PATCH
           git apply /tmp/fix.patch
           rm -f .github/workflows/apply-fix.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build-fpkg.ps1 webui/README.md webui/index.html webui/server.py webui/static/app.js .github/workflows/apply-fix.yml
-          git commit -m "$PATCH_COMMIT_MESSAGE"
+          git commit -m "Fix backport base archive workflow"
           git push
