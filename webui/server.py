@@ -31,13 +31,13 @@ PORT = int(os.environ.get("FPKG_WEB_PORT", "8080"))
 POWERSHELL = os.environ.get("FPKG_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell.exe")
 PYTHON = os.environ.get("FPKG_PYTHON") or shutil.which("python3") or shutil.which("python") or "python"
 MAX_LOG_LINES = int(os.environ.get("FPKG_MAX_LOG_LINES", "4000"))
-CONFIG_ROOT = Path(os.environ.get("FPKG_CONFIG_ROOT", "/mnt/cache/appdata/fpkg-builder")).resolve()
+CONFIG_ROOT = Path(os.environ.get("FPKG_CONFIG_ROOT", "/config")).resolve()
 SETTINGS_FILE = CONFIG_ROOT / "settings.json"
 BROWSE_ROOTS = [
     Path(path).resolve()
     for path in os.environ.get(
         "FPKG_BROWSE_ROOTS",
-        "/mnt/user:/mnt/cache/appdata:/app/fpkg-builder",
+        "/mnt/user:/config:/app/fpkg-builder",
     ).split(":")
     if path
 ]
@@ -68,8 +68,8 @@ active_job_id: Optional[str] = None
 
 
 DEFAULT_SETTINGS = {
-    "defaultOutput": "/mnt/user/fpkg-output",
-    "defaultWork": "/mnt/cache/appdata/fpkg-builder/work",
+    "defaultOutput": os.environ.get("FPKG_DEFAULT_OUTPUT", "/mnt/user/fpkg-output"),
+    "defaultWork": os.environ.get("FPKG_DEFAULT_WORK", "/config/work"),
     "archivePasswords": [],
     "overlapPrepare": True,
     "verifyChecksums": True,
@@ -343,7 +343,7 @@ def build_args(payload: dict[str, Any]) -> list[str]:
 
 
 def import_root() -> Path:
-    return Path(os.environ.get("FPKG_IMPORT_ROOT", "/mnt/cache/appdata/fpkg-builder/imports"))
+    return Path(os.environ.get("FPKG_IMPORT_ROOT", "/config/imports"))
 
 
 def archive_stem(path: Path) -> str:
@@ -409,7 +409,7 @@ def archive_build_payload(payload: dict[str, Any]) -> dict[str, Any]:
     archive = Path(str(payload.get("archive", "")).strip())
     if not archive.is_file():
         raise ValueError(f"Archive does not exist or is not a file: {archive}")
-    output_folder = str(payload.get("outputFolder", "")).strip() or "/mnt/user/fpkg-output"
+    output_folder = str(payload.get("outputFolder", "")).strip() or load_settings()["defaultOutput"]
     return {
         "archive": str(archive),
         "outputFolder": output_folder,
@@ -429,7 +429,7 @@ def folder_backport_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"Backport folder does not exist or is not a folder: {backport_folder}")
     return {
         "backportFolder": str(backport_folder),
-        "outputFolder": str(payload.get("outputFolder", "")).strip() or "/mnt/user/fpkg-output",
+        "outputFolder": str(payload.get("outputFolder", "")).strip() or load_settings()["defaultOutput"],
         "gameFolder": str(payload.get("gameFolder", "")).strip(),
         "basePackage": str(payload.get("basePackage", "")).strip(),
         "name": str(payload.get("name", "")).strip(),
@@ -453,6 +453,34 @@ def title_id_from_pkg(package: Path) -> str | None:
     param = (info or {}).get("param") or {}
     title_id = param.get("titleId")
     return str(title_id).strip() if title_id else None
+
+
+def resolve_base_package(path_text: str, preferred_name: str = "") -> Path:
+    base_path = Path(path_text)
+    if base_path.is_file():
+        if base_path.suffix.lower() != ".pkg":
+            raise ValueError(f"Base package is not a .pkg file: {base_path}")
+        return base_path
+    if not base_path.is_dir():
+        raise ValueError(f"Base PKG path does not exist: {base_path}")
+
+    packages = sorted(base_path.glob("*.pkg"))
+    if not packages:
+        packages = sorted(base_path.rglob("*.pkg"))
+    if not packages:
+        raise ValueError(f"No .pkg file found in base folder: {base_path}")
+
+    preferred = preferred_name.strip().lower()
+    if preferred:
+        matches = [package for package in packages if preferred in package.stem.lower()]
+        if len(matches) == 1:
+            return matches[0]
+
+    if len(packages) == 1:
+        return packages[0]
+
+    examples = ", ".join(package.name for package in packages[:5])
+    raise ValueError(f"Base folder contains multiple .pkg files ({examples}). Select the exact Base PKG file.")
 
 
 def extract_args(payload: dict[str, Any]) -> list[str]:
@@ -520,9 +548,8 @@ def run_archive_build(job: Job) -> None:
         build_payload["backportFolder"] = str(source)
 
         if base_package:
-            base_path = Path(base_package)
-            if not base_path.is_file():
-                raise ValueError(f"Base PKG does not exist or is not a file: {base_path}")
+            base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
+            job.append(f"Base package: {base_path}")
             name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
             build_payload["name"] = name
             output_dir = Path(payload["outputFolder"])
@@ -567,9 +594,8 @@ def run_folder_backport(job: Job) -> None:
             build_payload[key] = payload[key]
     base_package = payload.get("basePackage", "")
     if base_package:
-        base_path = Path(base_package)
-        if not base_path.is_file():
-            raise ValueError(f"Base PKG does not exist or is not a file: {base_path}")
+        base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
+        job.append(f"Base package: {base_path}")
         name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
         build_payload["name"] = name
         output_dir = Path(payload["outputFolder"])
