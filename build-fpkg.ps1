@@ -55,9 +55,10 @@ param(
     [string]$Name,
     [switch]$RebuildBase,
     [string]$ContentVersion,
-    [ValidateRange(-4, 9)][int]$CompressionLevel = 7,
+    [ValidateRange(-4, 9)][int]$CompressionLevel = 4,
     [string]$WorkFolder,
     [string]$TemporaryDirectory = $env:LIBPROSPERO_TEMP_DIR,
+    [string]$ReferencePackage,
     [string]$ToolkitRoot,
     [string]$Python = 'python',
     [switch]$KeepWork,
@@ -132,6 +133,39 @@ function Invoke-Json {
     return $text.Substring($start) | ConvertFrom-Json
 }
 
+function Get-PublisherCommand {
+    if ($IsLinux -or $IsMacOS) {
+        $wine = Get-Command wine64 -ErrorAction SilentlyContinue
+        if (-not $wine) { $wine = Get-Command wine -ErrorAction SilentlyContinue }
+        if (-not $wine) {
+            throw "Running $publisher on Linux needs wine/wine64 in the container."
+        }
+        return @{
+            Command = $wine.Source
+            Prefix = @($publisher)
+        }
+    }
+    return @{
+        Command = $publisher
+        Prefix = @()
+    }
+}
+
+function Invoke-Publisher {
+    param(
+        [string[]]$Arguments,
+        [string]$LogPath
+    )
+    $runner = Get-PublisherCommand
+    $allArgs = @($runner.Prefix) + $Arguments
+    $output = & $runner.Command @allArgs 2>&1
+    $script:PublisherExitCode = $LASTEXITCODE
+    foreach ($line in $output) {
+        Write-Note $line
+        if ($LogPath) { Add-Content -LiteralPath $LogPath -Value $line }
+    }
+}
+
 foreach ($required in @($gp5Script, $infoScript, $metricScript, $publisher)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Build component missing: $required"
@@ -172,10 +206,11 @@ function Get-OutputStem([string]$explicit, [string]$gameFolder) {
 }
 
 $stem = Get-OutputStem $Name $game
-$base = Join-Path $outDir ($stem + '.pkg')
+$externalReference = if ([string]::IsNullOrWhiteSpace($ReferencePackage)) { $null } else { Resolve-InputPath $ReferencePackage }
+$base = if ($externalReference) { $externalReference } else { Join-Path $outDir ($stem + '.pkg') }
 $output = Join-Path $outDir ($stem + '-backport.pkg')
 
-$baseExists = (Test-Path -LiteralPath $base -PathType Leaf) -and -not $RebuildBase
+$baseExists = ($externalReference -or (Test-Path -LiteralPath $base -PathType Leaf)) -and -not $RebuildBase
 $createBase = -not $baseExists
 
 if ($createBase -and -not $game) {
@@ -196,7 +231,7 @@ if (-not (Test-Path -LiteralPath $outDir -PathType Container)) {
 
 Write-Step "Output"
 Write-Note "folder : $outDir"
-Write-Note "base   : $(Split-Path -Leaf $base)$(if ($baseExists) { '   (existing, reused)' } else { '   (will be built)' })"
+Write-Note "base   : $base$(if ($externalReference) { '   (external reference)' } elseif ($baseExists) { '   (existing, reused)' } else { '   (will be built)' })"
 if ($buildUpdate) { Write-Note "update : $(Split-Path -Leaf $output)" }
 
 # ------------------------------------------------------------- base package
@@ -315,9 +350,8 @@ try {
         Write-Step "Extracting base package to work tree (no game folder supplied)"
         Write-Note $sourceRoot
         New-Folder $sourceRoot
-        & $publisher img_extract --passcode ('0' * 32) --no_progress_bar $reference $sourceRoot 2>&1 |
-            ForEach-Object { Write-Note $_ }
-        if ($LASTEXITCODE -ne 0) { throw "img_extract failed with exit code $LASTEXITCODE" }
+        Invoke-Publisher -Arguments @('img_extract', '--passcode', ('0' * 32), '--no_progress_bar', $reference, $sourceRoot)
+        if ($script:PublisherExitCode -ne 0) { throw "img_extract failed with exit code $script:PublisherExitCode" }
     }
     New-Folder $overlay
 
@@ -443,12 +477,10 @@ try {
                 $work, ($workFree / 1GB), ($referenceBytes / 1GB))
     # Keep the publisher's own words: the thrown exit code alone says nothing about
     # what went wrong, and this step is where a build usually ends.
-    & $publisher img_create --oformat nwonly --compression_level $CompressionLevel --no_progress_bar `
-        --ref_pkg_path $reference $gp5 $partial 2>&1 |
-        Tee-Object -FilePath (Join-Path $logDirectory 'img-create.log') |
-        ForEach-Object { Write-Note $_ }
-    if ($LASTEXITCODE -ne 0) {
-        throw ("img_create failed with exit code $LASTEXITCODE. " +
+    Invoke-Publisher -Arguments @('img_create', '--oformat', 'nwonly', '--compression_level', [string]$CompressionLevel, '--no_progress_bar',
+        '--ref_pkg_path', $reference, $gp5, $partial) -LogPath (Join-Path $logDirectory 'img-create.log')
+    if ($script:PublisherExitCode -ne 0) {
+        throw ("img_create failed with exit code $script:PublisherExitCode. " +
                "Its output is in " + (Join-Path $logDirectory 'img-create.log'))
     }
     if (-not (Test-Path -LiteralPath $partial -PathType Leaf)) {
