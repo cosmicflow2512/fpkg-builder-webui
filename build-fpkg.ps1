@@ -138,6 +138,20 @@ function Get-PublisherCommand {
         $wine = Get-Command wine64 -ErrorAction SilentlyContinue
         if (-not $wine) { $wine = Get-Command wine -ErrorAction SilentlyContinue }
         if (-not $wine) {
+            foreach ($candidate in @(
+                '/usr/lib/wine/wine64',
+                '/usr/lib/x86_64-linux-gnu/wine/wine64',
+                '/usr/bin/wine'
+            )) {
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    return @{
+                        Command = $candidate
+                        Prefix = @($publisher)
+                    }
+                }
+            }
+        }
+        if (-not $wine) {
             throw "Running $publisher on Linux needs wine/wine64 in the container."
         }
         return @{
