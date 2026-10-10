@@ -326,10 +326,11 @@ def build_args(payload: dict[str, Any]) -> list[str]:
     value_arg(payload, "name", "-Name", args)
     value_arg(payload, "contentVersion", "-ContentVersion", args)
     value_arg(payload, "workFolder", "-WorkFolder", args)
+    value_arg(payload, "referencePackage", "-ReferencePackage", args)
     value_arg(payload, "toolkitRoot", "-ToolkitRoot", args)
     value_arg(payload, "temporaryDirectory", "-TemporaryDirectory", args)
 
-    compression = str(payload.get("compressionLevel", "7")).strip()
+    compression = str(payload.get("compressionLevel", "4")).strip()
     try:
         level = int(compression)
     except ValueError as exc:
@@ -500,7 +501,9 @@ def archive_build_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "name": str(payload.get("name", "")).strip(),
         "force": bool(payload.get("force")),
         "keepWork": bool(payload.get("keepWork")),
-        "compressionLevel": str(payload.get("compressionLevel", "7")).strip() or "7",
+        "rebuildBase": bool(payload.get("rebuildBase")),
+        "compressionLevel": str(payload.get("compressionLevel", "4")).strip() or "4",
+        "workFolder": str(payload.get("workFolder", "")).strip(),
     }
 
 
@@ -516,7 +519,7 @@ def folder_backport_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "name": str(payload.get("name", "")).strip(),
         "force": bool(payload.get("force")),
         "keepWork": bool(payload.get("keepWork")),
-        "compressionLevel": str(payload.get("compressionLevel", "7")).strip() or "7",
+        "compressionLevel": str(payload.get("compressionLevel", "4")).strip() or "4",
         "workFolder": str(payload.get("workFolder", "")).strip(),
     }
 
@@ -595,15 +598,8 @@ def apply_base_source(payload: dict[str, Any], build_payload: dict[str, Any], jo
         job.append(f"Base package: {base_path}")
         name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
         build_payload["name"] = name
-        output_dir = Path(payload["outputFolder"])
-        output_dir.mkdir(parents=True, exist_ok=True)
-        target_base = output_dir / f"{name}.pkg"
-        if target_base.resolve() != base_path.resolve():
-            if target_base.exists() and not payload.get("force"):
-                job.append(f"Using existing base package: {target_base}")
-            else:
-                job.append(f"Copying base package to: {target_base}")
-                shutil.copy2(base_path, target_base)
+        build_payload["referencePackage"] = str(base_path)
+        job.append("Using base package in place; it will not be copied to the output folder.")
         return
 
     if game_archive:
@@ -667,7 +663,7 @@ def run_archive_build(job: Job) -> None:
     source = extract_to_import(archive, job, "main")
     build_payload: dict[str, Any] = {
         "outputFolder": payload["outputFolder"],
-        "compressionLevel": payload.get("compressionLevel", "7"),
+        "compressionLevel": payload.get("compressionLevel", "4"),
         "force": payload.get("force", False),
         "keepWork": payload.get("keepWork", False),
     }
@@ -696,7 +692,7 @@ def run_folder_backport(job: Job) -> None:
     build_payload: dict[str, Any] = {
         "backportFolder": payload["backportFolder"],
         "outputFolder": payload["outputFolder"],
-        "compressionLevel": payload.get("compressionLevel", "7"),
+        "compressionLevel": payload.get("compressionLevel", "4"),
         "force": payload.get("force", False),
         "keepWork": payload.get("keepWork", False),
     }
@@ -706,6 +702,65 @@ def run_folder_backport(job: Job) -> None:
     base_package = payload.get("basePackage", "")
     if base_package:
         apply_base_source(payload, build_payload, job)
+    args = build_args(build_payload)
+    run_process(job, args)
+
+
+def pair_build_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    game_source = str(payload.get("gameSource", "")).strip()
+    backport_source = str(payload.get("backportSource", "")).strip()
+    if not game_source:
+        raise ValueError("Game/RAW source is required.")
+    if not backport_source:
+        raise ValueError("Backport source is required.")
+    game_path = Path(game_source)
+    backport_path = Path(backport_source)
+    if not game_path.exists():
+        raise ValueError(f"Game/RAW source does not exist: {game_path}")
+    if not backport_path.exists():
+        raise ValueError(f"Backport source does not exist: {backport_path}")
+    return {
+        "archive": str(game_path),
+        "backportSource": str(backport_path),
+        "outputFolder": str(payload.get("outputFolder", "")).strip() or load_settings()["defaultOutput"],
+        "name": str(payload.get("name", "")).strip(),
+        "force": bool(payload.get("force")),
+        "keepWork": bool(payload.get("keepWork")),
+        "rebuildBase": bool(payload.get("rebuildBase")),
+        "compressionLevel": str(payload.get("compressionLevel", "4")).strip() or "4",
+        "workFolder": str(payload.get("workFolder", "")).strip(),
+    }
+
+
+def run_pair_build(job: Job) -> None:
+    payload = job.payload
+    game_source = Path(payload["archive"])
+    if game_source.is_file():
+        game_folder = extract_to_import(game_source, job, "game")
+    else:
+        game_folder = game_source
+    if not contains_game_dump(game_folder):
+        raise ValueError(f"Game source did not resolve to a game dump with sce_sys/param.json: {game_folder}")
+
+    backport_source = Path(str(payload.get("backportSource", "")))
+    if backport_source.is_file():
+        backport_folder = extract_to_import(backport_source, job, "backport")
+    else:
+        backport_folder = backport_source
+    if not backport_folder.is_dir():
+        raise ValueError(f"Backport source did not resolve to a folder: {backport_folder}")
+
+    build_payload = {
+        "outputFolder": payload["outputFolder"],
+        "gameFolder": str(game_folder),
+        "backportFolder": str(backport_folder),
+        "name": payload.get("name", ""),
+        "compressionLevel": payload.get("compressionLevel", "4"),
+        "workFolder": payload.get("workFolder", "") or "/config/work",
+        "force": payload.get("force", False),
+        "keepWork": payload.get("keepWork", False),
+        "rebuildBase": payload.get("rebuildBase", False),
+    }
     args = build_args(build_payload)
     run_process(job, args)
 
@@ -720,6 +775,8 @@ def run_job(job: Job) -> None:
     try:
         if job.kind == "archive_build":
             run_archive_build(job)
+        elif job.kind == "pair_build":
+            run_pair_build(job)
         elif job.kind == "folder_backport":
             run_folder_backport(job)
         else:
@@ -808,6 +865,9 @@ class Handler(SimpleHTTPRequestHandler):
                 elif kind == "archive_build":
                     args = []
                     job_payload = archive_build_payload(payload)
+                elif kind == "pair_build":
+                    args = []
+                    job_payload = pair_build_payload(payload)
                 elif kind == "folder_backport":
                     args = []
                     job_payload = folder_backport_payload(payload)
