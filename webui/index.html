@@ -31,20 +31,20 @@
               <span>Was willst du tun?</span>
               <div class="segmented workflow">
                 <label><input type="radio" name="mode" value="game" checked> FPKG aus Game/RAW</label>
-                <label><input type="radio" name="mode" value="backport-base"> Backport in Base-PKG</label>
-                <label><input type="radio" name="mode" value="backport-only"> Nur Backport bauen</label>
+                <label><input type="radio" name="mode" value="backport-base"> Backport gegen Base bauen</label>
+                <label><input type="radio" name="mode" value="backport-only"> Backport ohne Base-Feld</label>
                 <label><input type="radio" name="mode" value="extract"> PKG entpacken</label>
               </div>
-              <small id="mode-hint">Waehle zuerst den Workflow, dann werden nur die passenden Felder gezeigt.</small>
+              <small id="mode-hint">Fuer Backports zuerst den Backport auswaehlen, danach die passende Base-PKG oder den Base-Ordner.</small>
             </div>
 
             <label data-field="source">
-              <span id="source-label">Game/RAW-Quelle</span>
+              <span id="source-label">1. Backport ZIP/Ordner oder Game/RAW-Quelle</span>
               <div class="path-row">
                 <input name="source" autocomplete="off" required placeholder="/mnt/user/NZB/game-dump-oder-raw.zip">
                 <button type="button" class="browse" data-type="any">...</button>
               </div>
-              <small id="source-hint">Ein Game-Dump-Ordner oder Archiv, das erst entpackt werden muss.</small>
+              <small id="source-hint">Beim Backport ist das die Backport-ZIP, ein Archiv oder der entpackte Backport-Ordner.</small>
             </label>
 
             <label data-field="output">
@@ -56,7 +56,7 @@
             </label>
 
             <label data-field="base">
-              <span>Base PKG oder Base-Ordner</span>
+              <span>2. Base PKG oder Base-Ordner</span>
               <div class="path-row">
                 <input name="basePackage" autocomplete="off" placeholder="/mnt/user/NZB/base-ordner-oder/PPSA12345.pkg">
                 <button type="button" class="browse" data-type="any">...</button>
@@ -188,6 +188,6 @@
       </div>
     </dialog>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2026-10-10-backport-source-base"></script>
   </body>
 </html>
