@@ -187,6 +187,10 @@ button:focus {
   gap: 8px;
 }
 
+.workflow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .segmented label,
 .check {
   min-height: 42px;
@@ -197,6 +201,12 @@ button:focus {
   border: 1px solid #40506a;
   border-radius: 6px;
   background: #131b29;
+}
+
+.workflow label {
+  align-items: flex-start;
+  min-height: 54px;
+  line-height: 1.25;
 }
 
 .segmented input,
