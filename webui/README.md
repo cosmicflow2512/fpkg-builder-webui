@@ -36,6 +36,9 @@ Use the `Archive Build` tab when the input is already packed.
 - ZIP and TAR archives are extracted directly. RAR archives are extracted with
   `unar` first, then `7z` as a fallback. If an archive contains one nested
   archive, the WebUI extracts the nested archive automatically.
+- Multi-part archives are supported when all parts are in the same folder. If a
+  later part is selected, the WebUI automatically starts from the first volume
+  such as `.part01.rar`, `.rar`, `.zip`, or `.001`.
 
 ## Unraid
 
