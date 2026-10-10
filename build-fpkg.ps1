@@ -200,7 +200,7 @@ if ($buildUpdate -and -not (Test-Path -LiteralPath $backport -PathType Container
 }
 
 # Both packages land in one folder and are named from the title, so the pair stays
-# together and the update is always beside the base it was built against.
+together and the update is always beside the base it was built against.
 function Get-OutputStem([string]$explicit, [string]$gameFolder) {
     if (-not [string]::IsNullOrWhiteSpace($explicit)) { return $explicit }
     if ($gameFolder) {
@@ -363,6 +363,14 @@ try {
         $sourceRoot = Join-Path $work 'source'
         Write-Step "Extracting base package to work tree (no game folder supplied)"
         Write-Note $sourceRoot
+        $referenceBytes = (Get-Item -LiteralPath $reference).Length
+        $workFree = (New-Object IO.DriveInfo([IO.Path]::GetPathRoot($work))).AvailableFreeSpace
+        if ($workFree -lt $referenceBytes) {
+            throw ("Not enough free space to extract the base package into the work folder. " +
+                   "The drive holding $work has {0:N1} GB free, but the reference package alone is {1:N1} GB. " +
+                   "Use a larger cache/work path or supply the unpacked game folder/archive so the tool can read it in place." -f
+                   ($workFree / 1GB), ($referenceBytes / 1GB))
+        }
         New-Folder $sourceRoot
         Invoke-Publisher -Arguments @('img_extract', '--passcode', ('0' * 32), '--no_progress_bar', $reference, $sourceRoot)
         if ($script:PublisherExitCode -ne 0) { throw "img_extract failed with exit code $script:PublisherExitCode" }
