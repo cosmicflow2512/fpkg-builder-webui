@@ -141,14 +141,14 @@ const modeUi = {
     fields: ["source", "output", "name"],
   },
   "backport-base": {
-    sourceLabel: "Backport-Quelle",
+    sourceLabel: "1. Backport ZIP/Ordner",
     sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
-    sourceHint: "Backport-Archiv oder entpackter Backport-Ordner.",
-    hint: "Backport mit einer vorhandenen Base-PKG bauen.",
+    sourceHint: "Hier kommt die Backport-ZIP, ein RAR/7z-Archiv oder der entpackte Backport-Ordner hinein.",
+    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG oder Base-Ordner auswaehlen.",
     fields: ["source", "output", "base", "name"],
   },
   "backport-only": {
-    sourceLabel: "Backport-Quelle",
+    sourceLabel: "1. Backport ZIP/Ordner",
     sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
     sourceHint: "Nur den Backport bauen. Der Name muss zur vorhandenen Base-PKG im Output passen, falls keine Base-PKG gewaehlt wird.",
     hint: "Nur Backport-PKG bauen, wenn die passende Base schon im Output liegt.",
