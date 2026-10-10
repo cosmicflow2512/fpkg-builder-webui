@@ -14,11 +14,15 @@ Open `http://localhost:8080`.
 
 ```bash
 docker build -f Dockerfile.webui -t fpkg-builder-webui:local .
-docker run --rm -p 8080:8080 \
-  -v /mnt/user/games:/mnt/user/games \
-  -v /mnt/user/backports:/mnt/user/backports \
-  -v /mnt/user/fpkg-output:/mnt/user/fpkg-output \
-  -v /mnt/cache/appdata/fpkg-builder:/mnt/cache/appdata/fpkg-builder \
+docker run --rm -p 8088:8080 \
+  -v /mnt/user/NZB:/shares/NZB \
+  -v /mnt/user/NZB/fpkg-fixes/fpkg-output:/output \
+  -v /mnt/cache/appdata/fpkg-builder-webui:/config \
+  -e FPKG_CONFIG_ROOT=/config \
+  -e FPKG_IMPORT_ROOT=/config/imports \
+  -e FPKG_DEFAULT_OUTPUT=/output \
+  -e FPKG_DEFAULT_WORK=/config/work \
+  -e FPKG_BROWSE_ROOTS=/shares:/output:/config:/app/fpkg-builder \
   fpkg-builder-webui:local
 ```
 
@@ -41,7 +45,7 @@ Use the `Archive Build` tab when the input is already packed.
 3. If the package is private, open the package settings on GitHub and set its visibility to public, or run `docker login ghcr.io` on Unraid.
 4. Copy `deploy/unraid/fpkg-builder-webui.xml` to `/boot/config/plugins/dockerMan/templates-user/`.
 5. In Unraid, open Docker, add a container, and choose the `fpkg-builder-webui` user template.
-6. Adjust the host paths for games, backports, output, and appdata.
+6. Adjust the host paths for your input share, output folder, and appdata.
 
 ## Compatibility note
 
