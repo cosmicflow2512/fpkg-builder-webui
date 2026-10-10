@@ -33,8 +33,9 @@ Use the `Archive Build` tab when the input is already packed.
   `Game archive`, or a `Game folder`.
 - Existing base fPKGs are copied into the output folder as `<name>.pkg` when
   needed, then the normal backport build is started.
-- ZIP and TAR archives are extracted directly. Other archive formats are passed to
-  `7z` when it is available in the container.
+- ZIP and TAR archives are extracted directly. RAR archives are extracted with
+  `unar` first, then `7z` as a fallback. If an archive contains one nested
+  archive, the WebUI extracts the nested archive automatically.
 
 ## Unraid
 
