@@ -27,16 +27,27 @@
           </div>
 
           <form id="job-form" class="form">
-            <label>
-              <span>Quelle</span>
+            <div class="mode-box">
+              <span>Was willst du tun?</span>
+              <div class="segmented workflow">
+                <label><input type="radio" name="mode" value="game" checked> FPKG aus Game/RAW</label>
+                <label><input type="radio" name="mode" value="backport-base"> Backport in Base-PKG</label>
+                <label><input type="radio" name="mode" value="backport-only"> Nur Backport bauen</label>
+                <label><input type="radio" name="mode" value="extract"> PKG entpacken</label>
+              </div>
+              <small id="mode-hint">Waehle zuerst den Workflow, dann werden nur die passenden Felder gezeigt.</small>
+            </div>
+
+            <label data-field="source">
+              <span id="source-label">Game/RAW-Quelle</span>
               <div class="path-row">
-                <input name="source" autocomplete="off" required placeholder="/mnt/user/NZB/fpkg-inbox/game-or-backport.zip">
+                <input name="source" autocomplete="off" required placeholder="/mnt/user/NZB/game-dump-oder-raw.zip">
                 <button type="button" class="browse" data-type="any">...</button>
               </div>
-              <small id="source-hint">Archiv, Game-Ordner, Base-PKG oder Backport-Ordner.</small>
+              <small id="source-hint">Ein Game-Dump-Ordner oder Archiv, das erst entpackt werden muss.</small>
             </label>
 
-            <label>
+            <label data-field="output">
               <span>Output</span>
               <div class="path-row">
                 <input name="outputFolder" autocomplete="off" required value="/mnt/user/fpkg-output">
@@ -44,38 +55,28 @@
               </div>
             </label>
 
-            <label>
+            <label data-field="base">
               <span>Base PKG</span>
               <div class="path-row">
-                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/fpkg-output/PPSA12345.pkg">
+                <input name="basePackage" autocomplete="off" placeholder="/mnt/user/NZB/base/PPSA12345.pkg">
                 <button type="button" class="browse" data-type="file">...</button>
               </div>
-              <small>Optional fuer Backport-Archive, wenn die Base schon als fPKG existiert.</small>
+              <small>Die fertige Base-PKG, gegen die der Backport gebaut wird.</small>
             </label>
 
-            <label>
-              <span>Game-Quelle</span>
+            <label data-field="game-source">
+              <span>Game/RAW fuer Base</span>
               <div class="path-row">
-                <input name="gameSource" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app oder game.zip">
+                <input name="gameSource" autocomplete="off" placeholder="/mnt/user/NZB/game-dump-oder-raw.zip">
                 <button type="button" class="browse" data-type="any">...</button>
               </div>
-              <small>Optional fuer Backport-Archive ohne Base-PKG.</small>
+              <small>Nur noetig, wenn keine fertige Base-PKG vorhanden ist.</small>
             </label>
 
-            <label>
+            <label data-field="name">
               <span>Name</span>
               <input name="name" autocomplete="off" placeholder="Auto aus Title-ID oder Dateiname">
             </label>
-
-            <div class="mode-box">
-              <span>Quelle behandeln als</span>
-              <div class="segmented">
-                <label><input type="radio" name="mode" value="auto" checked> Auto</label>
-                <label><input type="radio" name="mode" value="game"> Game</label>
-                <label><input type="radio" name="mode" value="backport"> Backport</label>
-                <label><input type="radio" name="mode" value="extract"> Extract</label>
-              </div>
-            </div>
 
             <details class="advanced">
               <summary>Erweitert</summary>
@@ -87,7 +88,7 @@
                 <label>
                   <span>Arbeitsordner</span>
                   <div class="path-row">
-                    <input name="workFolder" autocomplete="off" placeholder="/mnt/cache/appdata/fpkg-builder/work">
+                    <input name="workFolder" autocomplete="off" placeholder="/config/work">
                     <button type="button" class="browse" data-type="dir">...</button>
                   </div>
                 </label>
@@ -150,7 +151,7 @@
                 </label>
                 <label>
                   <span>Standard-Arbeitsordner</span>
-                  <input name="defaultWork" autocomplete="off" value="/mnt/cache/appdata/fpkg-builder/work">
+                  <input name="defaultWork" autocomplete="off" value="/config/work">
                 </label>
                 <label>
                   <span>Archiv-Passwoerter</span>
