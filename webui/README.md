@@ -31,14 +31,18 @@ Use the `Archive Build` tab when the input is already packed.
 - `Main archive` can be a zipped game dump or a zipped backport folder.
 - If the main archive is a backport folder, select either an existing `Base PKG`,
   a folder containing the base package, a `Game archive`, or a `Game folder`.
-- Existing base fPKGs are copied into the output folder as `<name>.pkg` when
-  needed, then the normal backport build is started.
+- Existing base fPKGs are used in place as `-ReferencePackage`; they are not
+  copied into the output folder first.
+- `Game + Backport bauen` takes a game dump/archive and a separate backport
+  folder/archive, builds the base package, then builds the backport package
+  against that base in the same job.
 - ZIP and TAR archives are extracted directly. RAR archives are extracted with
   `unar` first, then `7z` as a fallback. If an archive contains one nested
   archive, the WebUI extracts the nested archive automatically.
 - Multi-part archives are supported when all parts are in the same folder. If a
   later part is selected, the WebUI automatically starts from the first volume
   such as `.part01.rar`, `.rar`, `.zip`, or `.001`.
+- Compression defaults to Kraken level 4.
 
 ## Unraid
 
