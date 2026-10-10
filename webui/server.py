@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -355,9 +356,51 @@ def archive_stem(path: Path) -> str:
     return path.stem
 
 
+def split_archive_start(path: Path) -> Path:
+    name = path.name
+    lower = name.lower()
+    directory = path.parent
+
+    rar_part = re.match(r"^(?P<prefix>.+)\.part(?P<number>\d+)\.rar$", name, re.IGNORECASE)
+    if rar_part:
+        number = int(rar_part.group("number"))
+        width = len(rar_part.group("number"))
+        if number != 1:
+            first = directory / f"{rar_part.group('prefix')}.part{1:0{width}d}.rar"
+            if first.exists():
+                return first
+        return path
+
+    rar_volume = re.match(r"^(?P<prefix>.+)\.r\d{2,3}$", name, re.IGNORECASE)
+    if rar_volume:
+        first = directory / f"{rar_volume.group('prefix')}.rar"
+        if first.exists():
+            return first
+
+    zip_volume = re.match(r"^(?P<prefix>.+)\.z\d{2,3}$", name, re.IGNORECASE)
+    if zip_volume:
+        first = directory / f"{zip_volume.group('prefix')}.zip"
+        if first.exists():
+            return first
+
+    numeric_volume = re.match(r"^(?P<prefix>.+)\.(?P<number>\d{3})$", name, re.IGNORECASE)
+    if numeric_volume and numeric_volume.group("number") != "001":
+        first = directory / f"{numeric_volume.group('prefix')}.001"
+        if first.exists():
+            return first
+
+    return path
+
+
+def has_split_zip_parts(path: Path) -> bool:
+    return any(path.parent.glob(f"{path.stem}.z[0-9][0-9]")) or any(path.parent.glob(f"{path.stem}.z[0-9][0-9][0-9]"))
+
+
 def is_archive_file(path: Path) -> bool:
     lower = path.name.lower()
-    return lower.endswith((".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2"))
+    return lower.endswith((".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2")) or bool(
+        re.search(r"\.(part\d+\.rar|r\d{2,3}|z\d{2,3}|\d{3})$", lower)
+    )
 
 
 def safe_extract_zip(archive: Path, destination: Path) -> None:
@@ -379,10 +422,21 @@ def safe_extract_tar(archive: Path, destination: Path) -> None:
 
 
 def extract_archive(archive: Path, destination: Path, job: Job) -> None:
+    original_archive = archive
+    archive = split_archive_start(archive)
+    if archive != original_archive:
+        job.append(f"Using first archive volume: {archive}")
     destination.mkdir(parents=True, exist_ok=True)
     lower = archive.name.lower()
     seven_zip = shutil.which("7z") or shutil.which("7za")
     unar = shutil.which("unar")
+    if lower.endswith(".zip") and has_split_zip_parts(archive) and seven_zip:
+        job.append(f"Split ZIP detected; extracting with {seven_zip}.")
+        run_process(job, [seven_zip, "x", "-y", f"-o{destination}", str(archive)])
+        if job.return_code not in (None, 0):
+            raise RuntimeError(f"Archive extraction failed with exit code {job.return_code}")
+        job.return_code = None
+        return
     if lower.endswith(".zip"):
         job.append("Extracting ZIP archive.")
         safe_extract_zip(archive, destination)
