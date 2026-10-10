@@ -488,8 +488,27 @@ def nested_archive_or_none(path: Path) -> Path | None:
     if not current.is_dir():
         return None
     children = [child for child in current.iterdir() if not child.name.startswith(".")]
-    if len(children) == 1 and children[0].is_file() and is_archive_file(children[0]):
-        return children[0]
+    archives = sorted(child for child in children if child.is_file() and is_archive_file(child))
+    if len(children) == 1 and archives:
+        return archives[0]
+
+    part_one = [archive for archive in archives if re.search(r"\.part0*1\.rar$", archive.name, re.IGNORECASE)]
+    if part_one:
+        return part_one[0]
+
+    for archive in [candidate for candidate in archives if candidate.suffix.lower() == ".rar"]:
+        prefix = archive.name[:-4]
+        if (
+            any(current.glob(f"{prefix}.r[0-9][0-9]"))
+            or any(current.glob(f"{prefix}.r[0-9][0-9][0-9]"))
+            or any(current.glob(f"{prefix}.s[0-9][0-9]"))
+            or any(current.glob(f"{prefix}.s[0-9][0-9][0-9]"))
+        ):
+            return archive
+
+    for archive in archives:
+        if split_archive_start(archive) == archive and re.search(r"\.(001|zip)$", archive.name, re.IGNORECASE):
+            return archive
     return None
 
 
