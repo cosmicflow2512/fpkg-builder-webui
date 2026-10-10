@@ -31,6 +31,8 @@ PORT = int(os.environ.get("FPKG_WEB_PORT", "8080"))
 POWERSHELL = os.environ.get("FPKG_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell.exe")
 PYTHON = os.environ.get("FPKG_PYTHON") or shutil.which("python3") or shutil.which("python") or "python"
 MAX_LOG_LINES = int(os.environ.get("FPKG_MAX_LOG_LINES", "4000"))
+CONFIG_ROOT = Path(os.environ.get("FPKG_CONFIG_ROOT", "/mnt/cache/appdata/fpkg-builder")).resolve()
+SETTINGS_FILE = CONFIG_ROOT / "settings.json"
 BROWSE_ROOTS = [
     Path(path).resolve()
     for path in os.environ.get(
@@ -65,6 +67,15 @@ jobs_lock = threading.Lock()
 active_job_id: Optional[str] = None
 
 
+DEFAULT_SETTINGS = {
+    "defaultOutput": "/mnt/user/fpkg-output",
+    "defaultWork": "/mnt/cache/appdata/fpkg-builder/work",
+    "archivePasswords": [],
+    "overlapPrepare": True,
+    "verifyChecksums": True,
+}
+
+
 def json_response(handler: SimpleHTTPRequestHandler, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
     body = json.dumps(payload, indent=2).encode("utf-8")
     handler.send_response(status)
@@ -90,6 +101,44 @@ def read_json(handler: SimpleHTTPRequestHandler) -> dict[str, Any]:
     if length <= 0:
         return {}
     return json.loads(handler.rfile.read(length).decode("utf-8"))
+
+
+def load_settings() -> dict[str, Any]:
+    if not SETTINGS_FILE.exists():
+        return DEFAULT_SETTINGS.copy()
+    try:
+        with SETTINGS_FILE.open("r", encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except Exception:
+        return DEFAULT_SETTINGS.copy()
+    settings = DEFAULT_SETTINGS.copy()
+    settings.update({key: value for key, value in stored.items() if key in DEFAULT_SETTINGS})
+    if not isinstance(settings.get("archivePasswords"), list):
+        settings["archivePasswords"] = []
+    return settings
+
+
+def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = DEFAULT_SETTINGS.copy()
+    settings.update({key: payload.get(key, settings[key]) for key in DEFAULT_SETTINGS})
+    passwords = settings.get("archivePasswords") or []
+    settings["archivePasswords"] = [str(item) for item in passwords if str(item).strip()]
+    settings["overlapPrepare"] = bool(settings.get("overlapPrepare"))
+    settings["verifyChecksums"] = bool(settings.get("verifyChecksums"))
+    CONFIG_ROOT.mkdir(parents=True, exist_ok=True)
+    with SETTINGS_FILE.open("w", encoding="utf-8") as handle:
+        json.dump(settings, handle, indent=2)
+    return settings
+
+
+def human_size(size: int) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+    return f"{size} B"
 
 
 def status_payload() -> dict[str, Any]:
@@ -174,6 +223,64 @@ def browse_payload(raw_path: str, want: str) -> dict[str, Any]:
         "parent": str(path.parent) if path.parent != path and path_allowed(path.parent) else None,
         "roots": [str(root) for root in BROWSE_ROOTS],
         "entries": entries,
+    }
+
+
+def packages_payload(raw_path: str) -> dict[str, Any]:
+    settings = load_settings()
+    folder = Path(raw_path or settings["defaultOutput"]).expanduser()
+    if not path_allowed(folder):
+        raise ValueError(f"Path is outside allowed browse roots: {folder}")
+    if not folder.exists():
+        return {"path": str(folder), "packages": []}
+    if not folder.is_dir():
+        raise ValueError(f"Path is not a folder: {folder}")
+    packages = []
+    for package in sorted(folder.glob("*.pkg"), key=lambda item: item.stat().st_mtime, reverse=True):
+        stat = package.stat()
+        info = pkg_info(str(package))
+        param = (info or {}).get("param") or {}
+        packages.append(
+            {
+                "name": package.name,
+                "path": str(package),
+                "size": stat.st_size,
+                "sizeHuman": human_size(stat.st_size),
+                "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
+                "titleId": param.get("titleId"),
+                "contentId": param.get("contentId"),
+                "version": param.get("contentVersion") or param.get("version"),
+            }
+        )
+    return {"path": str(folder), "packages": packages}
+
+
+def diagnostics_payload() -> dict[str, Any]:
+    settings = load_settings()
+    tools = {
+        "powershell": POWERSHELL,
+        "python": PYTHON,
+        "7z": shutil.which("7z") or shutil.which("7za"),
+        "publisher": str(publisher_path()),
+    }
+    roots = []
+    for root in BROWSE_ROOTS:
+        entry: dict[str, Any] = {"path": str(root), "exists": root.exists()}
+        if root.exists():
+            usage = shutil.disk_usage(root)
+            entry["free"] = usage.free
+            entry["freeHuman"] = human_size(usage.free)
+        roots.append(entry)
+    safe_settings = settings.copy()
+    safe_settings["archivePasswords"] = ["***" for _ in safe_settings.get("archivePasswords", [])]
+    return {
+        "system": platform.platform(),
+        "root": str(ROOT),
+        "configRoot": str(CONFIG_ROOT),
+        "tools": tools,
+        "browseRoots": roots,
+        "settings": safe_settings,
+        "jobs": [job_summary(job) for job in jobs.values()],
     }
 
 
@@ -316,6 +423,23 @@ def archive_build_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def folder_backport_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    backport_folder = Path(str(payload.get("backportFolder", "")).strip())
+    if not backport_folder.is_dir():
+        raise ValueError(f"Backport folder does not exist or is not a folder: {backport_folder}")
+    return {
+        "backportFolder": str(backport_folder),
+        "outputFolder": str(payload.get("outputFolder", "")).strip() or "/mnt/user/fpkg-output",
+        "gameFolder": str(payload.get("gameFolder", "")).strip(),
+        "basePackage": str(payload.get("basePackage", "")).strip(),
+        "name": str(payload.get("name", "")).strip(),
+        "force": bool(payload.get("force")),
+        "keepWork": bool(payload.get("keepWork")),
+        "compressionLevel": str(payload.get("compressionLevel", "7")).strip() or "7",
+        "workFolder": str(payload.get("workFolder", "")).strip(),
+    }
+
+
 def extract_to_import(archive: Path, job: Job, label: str) -> Path:
     destination = import_root() / f"{label}-{archive_stem(archive)}-{job.id}"
     job.append(f"Import archive: {archive}")
@@ -429,6 +553,38 @@ def run_archive_build(job: Job) -> None:
     run_process(job, args)
 
 
+def run_folder_backport(job: Job) -> None:
+    payload = job.payload
+    build_payload: dict[str, Any] = {
+        "backportFolder": payload["backportFolder"],
+        "outputFolder": payload["outputFolder"],
+        "compressionLevel": payload.get("compressionLevel", "7"),
+        "force": payload.get("force", False),
+        "keepWork": payload.get("keepWork", False),
+    }
+    for key in ("gameFolder", "name", "workFolder"):
+        if payload.get(key):
+            build_payload[key] = payload[key]
+    base_package = payload.get("basePackage", "")
+    if base_package:
+        base_path = Path(base_package)
+        if not base_path.is_file():
+            raise ValueError(f"Base PKG does not exist or is not a file: {base_path}")
+        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
+        build_payload["name"] = name
+        output_dir = Path(payload["outputFolder"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        target_base = output_dir / f"{name}.pkg"
+        if target_base.resolve() != base_path.resolve():
+            if target_base.exists() and not payload.get("force"):
+                job.append(f"Using existing base package: {target_base}")
+            else:
+                job.append(f"Copying base package to: {target_base}")
+                shutil.copy2(base_path, target_base)
+    args = build_args(build_payload)
+    run_process(job, args)
+
+
 def run_job(job: Job) -> None:
     global active_job_id
     with jobs_lock:
@@ -439,6 +595,8 @@ def run_job(job: Job) -> None:
     try:
         if job.kind == "archive_build":
             run_archive_build(job)
+        elif job.kind == "folder_backport":
+            run_folder_backport(job)
         else:
             run_process(job, job.args)
         job.status = "succeeded" if job.return_code == 0 else "failed"
@@ -481,6 +639,21 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             json_response(self, payload)
             return
+        if path == "/api/packages":
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                payload = packages_payload(query.get("path", [""])[0])
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            json_response(self, payload)
+            return
+        if path == "/api/settings":
+            json_response(self, load_settings())
+            return
+        if path == "/api/diagnostics":
+            json_response(self, diagnostics_payload())
+            return
         if path == "/api/jobs":
             with jobs_lock:
                 payload = {"activeJobId": active_job_id, "jobs": [job_summary(job) for job in jobs.values()]}
@@ -510,6 +683,9 @@ class Handler(SimpleHTTPRequestHandler):
                 elif kind == "archive_build":
                     args = []
                     job_payload = archive_build_payload(payload)
+                elif kind == "folder_backport":
+                    args = []
+                    job_payload = folder_backport_payload(payload)
                 else:
                     args = build_args(payload)
                     job_payload = {}
@@ -524,6 +700,15 @@ class Handler(SimpleHTTPRequestHandler):
                 jobs[job.id] = job
             threading.Thread(target=run_job, args=(job,), daemon=True).start()
             json_response(self, {"job": job_summary(job)}, HTTPStatus.CREATED)
+            return
+
+        if path == "/api/settings":
+            try:
+                settings = save_settings(read_json(self))
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            json_response(self, settings)
             return
 
         if path.startswith("/api/jobs/") and path.endswith("/cancel"):
