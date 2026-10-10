@@ -261,6 +261,7 @@ def diagnostics_payload() -> dict[str, Any]:
         "powershell": POWERSHELL,
         "python": PYTHON,
         "7z": shutil.which("7z") or shutil.which("7za"),
+        "unar": shutil.which("unar"),
         "publisher": str(publisher_path()),
     }
     roots = []
@@ -354,6 +355,11 @@ def archive_stem(path: Path) -> str:
     return path.stem
 
 
+def is_archive_file(path: Path) -> bool:
+    lower = path.name.lower()
+    return lower.endswith((".zip", ".7z", ".rar", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2"))
+
+
 def safe_extract_zip(archive: Path, destination: Path) -> None:
     with zipfile.ZipFile(archive) as handle:
         for member in handle.infolist():
@@ -376,6 +382,7 @@ def extract_archive(archive: Path, destination: Path, job: Job) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     lower = archive.name.lower()
     seven_zip = shutil.which("7z") or shutil.which("7za")
+    unar = shutil.which("unar")
     if lower.endswith(".zip"):
         job.append("Extracting ZIP archive.")
         safe_extract_zip(archive, destination)
@@ -384,6 +391,16 @@ def extract_archive(archive: Path, destination: Path, job: Job) -> None:
         job.append("Extracting TAR archive.")
         safe_extract_tar(archive, destination)
         return
+    if lower.endswith(".rar") and unar:
+        job.append(f"Extracting RAR archive with {unar}.")
+        run_process(job, [unar, "-f", "-o", str(destination), str(archive)])
+        if job.return_code in (None, 0):
+            job.return_code = None
+            return
+        job.append(f"unar failed with exit code {job.return_code}; trying 7z fallback.")
+        shutil.rmtree(destination, ignore_errors=True)
+        destination.mkdir(parents=True, exist_ok=True)
+        job.return_code = None
     if seven_zip:
         job.append(f"Extracting archive with {seven_zip}.")
         run_process(job, [seven_zip, "x", "-y", f"-o{destination}", str(archive)])
@@ -399,6 +416,16 @@ def single_child_or_self(path: Path) -> Path:
     if len(children) == 1 and children[0].is_dir():
         return children[0]
     return path
+
+
+def nested_archive_or_none(path: Path) -> Path | None:
+    current = single_child_or_self(path)
+    if not current.is_dir():
+        return None
+    children = [child for child in current.iterdir() if not child.name.startswith(".")]
+    if len(children) == 1 and children[0].is_file() and is_archive_file(children[0]):
+        return children[0]
+    return None
 
 
 def contains_game_dump(path: Path) -> bool:
@@ -445,7 +472,17 @@ def extract_to_import(archive: Path, job: Job, label: str) -> Path:
     job.append(f"Import archive: {archive}")
     job.append(f"Extract into: {destination}")
     extract_archive(archive, destination, job)
-    return single_child_or_self(destination)
+    source = single_child_or_self(destination)
+    for depth in range(1, 4):
+        nested = nested_archive_or_none(source)
+        if not nested:
+            break
+        nested_destination = import_root() / f"{label}-nested{depth}-{archive_stem(nested)}-{job.id}"
+        job.append(f"Nested archive detected: {nested}")
+        job.append(f"Extract nested archive into: {nested_destination}")
+        extract_archive(nested, nested_destination, job)
+        source = single_child_or_self(nested_destination)
+    return source
 
 
 def title_id_from_pkg(package: Path) -> str | None:
