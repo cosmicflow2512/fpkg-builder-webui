@@ -7,7 +7,7 @@ ENV FPKG_REPO_ROOT=/app/fpkg-builder \
     FPKG_PYTHON=python3 \
     FPKG_DEFAULT_WORK=/config/work \
     LIBPROSPERO_TEMP_DIR=/config/work/publisher-temp \
-    WINEPREFIX=/config/wine \
+    WINEPREFIX=/config/work/wine \
     WINEDEBUG=-all
 
 RUN dpkg --add-architecture i386 \
@@ -17,6 +17,8 @@ RUN dpkg --add-architecture i386 \
 
 WORKDIR /app/fpkg-builder
 COPY . /app/fpkg-builder
+RUN chmod +x /app/fpkg-builder/webui/docker-entrypoint.sh
 
 EXPOSE 8080
+ENTRYPOINT ["/app/fpkg-builder/webui/docker-entrypoint.sh"]
 CMD ["python3", "webui/server.py"]
