@@ -29,8 +29,8 @@ docker run --rm -p 8088:8080 \
 Use the `Archive Build` tab when the input is already packed.
 
 - `Main archive` can be a zipped game dump or a zipped backport folder.
-- If the main archive is a backport folder, select either an existing `Base PKG`, a
-  `Game archive`, or a `Game folder`.
+- If the main archive is a backport folder, select either an existing `Base PKG`,
+  a folder containing the base package, a `Game archive`, or a `Game folder`.
 - Existing base fPKGs are copied into the output folder as `<name>.pkg` when
   needed, then the normal backport build is started.
 - ZIP and TAR archives are extracted directly. RAR archives are extracted with

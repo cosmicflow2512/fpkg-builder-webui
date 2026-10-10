@@ -216,7 +216,10 @@ if ($createBase) {
                    '-CompressionLevel', [string]$CompressionLevel,
                    '-ToolkitRoot', $toolkit)
     if ($Force -or $RebuildBase) { $buildArgs += '-Force' }
-    & (Get-Command powershell.exe).Source @buildArgs 2>&1 | ForEach-Object { Write-Note $_ }
+    $childPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if (-not $childPowerShell) { $childPowerShell = Get-Command pwsh -ErrorAction SilentlyContinue }
+    if (-not $childPowerShell) { throw "Neither powershell.exe nor pwsh was found for the base package build." }
+    & $childPowerShell.Source @buildArgs 2>&1 | ForEach-Object { Write-Note $_ }
     if ($LASTEXITCODE -ne 0) { throw "Base package build failed with exit code $LASTEXITCODE" }
     if (-not (Test-Path -LiteralPath $base -PathType Leaf)) {
         throw "The base build reported success but produced nothing at $base"

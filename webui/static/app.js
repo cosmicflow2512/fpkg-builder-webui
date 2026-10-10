@@ -37,7 +37,7 @@ for (let level = -4; level <= 9; level += 1) {
 }
 
 function isArchive(path) {
-  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2)$/i.test(path || "");
+  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2|part\d+\.rar|r\d{2,3}|z\d{2,3}|\d{3})$/i.test(path || "");
 }
 
 function isPackage(path) {
@@ -144,7 +144,7 @@ const modeUi = {
     sourceLabel: "1. Backport ZIP/Ordner",
     sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
     sourceHint: "Hier kommt die Backport-ZIP, ein RAR/7z-Archiv oder der entpackte Backport-Ordner hinein.",
-    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG oder Base-Ordner auswaehlen.",
+    hint: "Backport gegen eine Base bauen: erst Backport-Quelle, danach Base-PKG, Base-Archiv oder Base-Ordner auswaehlen.",
     fields: ["source", "output", "base", "name"],
   },
   "backport-only": {

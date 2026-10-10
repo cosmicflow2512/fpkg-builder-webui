@@ -574,6 +574,52 @@ def resolve_base_package(path_text: str, preferred_name: str = "") -> Path:
     raise ValueError(f"Base folder contains multiple .pkg files ({examples}). Select the exact Base PKG file.")
 
 
+def apply_base_source(payload: dict[str, Any], build_payload: dict[str, Any], job: Job) -> None:
+    base_source = str(payload.get("basePackage", "")).strip()
+    game_archive = str(payload.get("gameArchive", "")).strip()
+    game_folder = str(payload.get("gameFolder", "")).strip()
+
+    if base_source:
+        base_path = Path(base_source)
+        if base_path.is_file() and base_path.suffix.lower() != ".pkg":
+            job.append(f"Base archive: {base_path}")
+            extracted_base = extract_to_import(base_path, job, "base")
+            if contains_game_dump(extracted_base):
+                job.append(f"Base archive looks like a game dump: {extracted_base}")
+                build_payload["gameFolder"] = str(extracted_base)
+                return
+            base_path = resolve_base_package(str(extracted_base), str(build_payload.get("name", "")))
+        else:
+            base_path = resolve_base_package(base_source, str(build_payload.get("name", "")))
+
+        job.append(f"Base package: {base_path}")
+        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
+        build_payload["name"] = name
+        output_dir = Path(payload["outputFolder"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        target_base = output_dir / f"{name}.pkg"
+        if target_base.resolve() != base_path.resolve():
+            if target_base.exists() and not payload.get("force"):
+                job.append(f"Using existing base package: {target_base}")
+            else:
+                job.append(f"Copying base package to: {target_base}")
+                shutil.copy2(base_path, target_base)
+        return
+
+    if game_archive:
+        game_archive_path = Path(game_archive)
+        if not game_archive_path.is_file():
+            raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
+        game_source = extract_to_import(game_archive_path, job, "game")
+        if not contains_game_dump(game_source):
+            raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
+        build_payload["gameFolder"] = str(game_source)
+        return
+
+    if game_folder:
+        build_payload["gameFolder"] = game_folder
+
+
 def extract_args(payload: dict[str, Any]) -> list[str]:
     publisher = publisher_path()
     if not publisher.exists():
@@ -628,41 +674,15 @@ def run_archive_build(job: Job) -> None:
     if payload.get("name"):
         build_payload["name"] = payload["name"]
 
-    if contains_game_dump(source):
+    has_base_source = bool(payload.get("basePackage") or payload.get("gameArchive") or payload.get("gameFolder"))
+    if contains_game_dump(source) and not has_base_source:
         job.append(f"Archive looks like a game dump: {source}")
         build_payload["gameFolder"] = str(source)
     else:
-        game_folder = payload.get("gameFolder", "")
-        game_archive = payload.get("gameArchive", "")
-        base_package = payload.get("basePackage", "")
         job.append(f"Archive looks like backport files: {source}")
         build_payload["backportFolder"] = str(source)
-
-        if base_package:
-            base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
-            job.append(f"Base package: {base_path}")
-            name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
-            build_payload["name"] = name
-            output_dir = Path(payload["outputFolder"])
-            output_dir.mkdir(parents=True, exist_ok=True)
-            target_base = output_dir / f"{name}.pkg"
-            if target_base.resolve() != base_path.resolve():
-                if target_base.exists() and not payload.get("force"):
-                    job.append(f"Using existing base package: {target_base}")
-                else:
-                    job.append(f"Copying base package to: {target_base}")
-                    shutil.copy2(base_path, target_base)
-        elif game_archive:
-            game_archive_path = Path(game_archive)
-            if not game_archive_path.is_file():
-                raise ValueError(f"Game archive does not exist or is not a file: {game_archive_path}")
-            game_source = extract_to_import(game_archive_path, job, "game")
-            if not contains_game_dump(game_source):
-                raise ValueError(f"Game archive did not unpack to a game dump with sce_sys/param.json: {game_source}")
-            build_payload["gameFolder"] = str(game_source)
-        elif game_folder:
-            build_payload["gameFolder"] = game_folder
-        elif not payload.get("name"):
+        apply_base_source(payload, build_payload, job)
+        if not has_base_source and not payload.get("name"):
             raise ValueError(
                 "Backport-only archive needs a Base PKG, Game archive, Game folder, or a Name matching an existing base PKG in the output folder."
             )
@@ -685,19 +705,7 @@ def run_folder_backport(job: Job) -> None:
             build_payload[key] = payload[key]
     base_package = payload.get("basePackage", "")
     if base_package:
-        base_path = resolve_base_package(base_package, str(build_payload.get("name", "")))
-        job.append(f"Base package: {base_path}")
-        name = build_payload.get("name") or title_id_from_pkg(base_path) or base_path.stem
-        build_payload["name"] = name
-        output_dir = Path(payload["outputFolder"])
-        output_dir.mkdir(parents=True, exist_ok=True)
-        target_base = output_dir / f"{name}.pkg"
-        if target_base.resolve() != base_path.resolve():
-            if target_base.exists() and not payload.get("force"):
-                job.append(f"Using existing base package: {target_base}")
-            else:
-                job.append(f"Copying base package to: {target_base}")
-                shutil.copy2(base_path, target_base)
+        apply_base_source(payload, build_payload, job)
     args = build_args(build_payload)
     run_process(job, args)
 
