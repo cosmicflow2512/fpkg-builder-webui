@@ -31,6 +31,7 @@
               <span>Was willst du tun?</span>
               <div class="segmented workflow">
                 <label><input type="radio" name="mode" value="game" checked> FPKG aus Game/RAW</label>
+                <label><input type="radio" name="mode" value="game-backport-pair"> Game + Backport bauen</label>
                 <label><input type="radio" name="mode" value="backport-base"> Backport gegen Base bauen</label>
                 <label><input type="radio" name="mode" value="backport-only"> Backport ohne Base-Feld</label>
                 <label><input type="radio" name="mode" value="extract"> PKG entpacken</label>
@@ -65,12 +66,12 @@
             </label>
 
             <label data-field="game-source">
-              <span>Game/RAW fuer Base</span>
+              <span id="game-source-label">Game/RAW fuer Base</span>
               <div class="path-row">
                 <input name="gameSource" autocomplete="off" placeholder="/mnt/user/NZB/game-dump-oder-raw.zip">
                 <button type="button" class="browse" data-type="any">...</button>
               </div>
-              <small>Nur noetig, wenn keine fertige Base-PKG vorhanden ist.</small>
+              <small id="game-source-hint">Nur noetig, wenn keine fertige Base-PKG vorhanden ist.</small>
             </label>
 
             <label data-field="name">
@@ -188,6 +189,6 @@
       </div>
     </dialog>
 
-    <script src="/static/app.js?v=2026-10-10-backport-base-archive"></script>
+    <script src="/static/app.js?v=2026-10-10-pair-build-cache"></script>
   </body>
 </html>
