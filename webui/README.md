@@ -17,10 +17,10 @@ docker build -f Dockerfile.webui -t fpkg-builder-webui:local .
 docker run --rm -p 8088:8080 \
   -v /mnt/user/NZB:/mnt/user/NZB \
   -v /mnt/user/PS5:/mnt/user/fpkg-output \
-  -v /mnt/cache/appdata/fpkg-builder-webui:/mnt/cache/appdata/fpkg-builder \
-  -e FPKG_CONFIG_ROOT=/mnt/cache/appdata/fpkg-builder \
-  -e FPKG_IMPORT_ROOT=/mnt/cache/appdata/fpkg-builder/imports \
-  -e FPKG_BROWSE_ROOTS=/mnt/user:/mnt/cache/appdata:/app/fpkg-builder \
+  -v /mnt/cache/appdata/fpkg-builder-webui:/config \
+  -e FPKG_CONFIG_ROOT=/config \
+  -e FPKG_IMPORT_ROOT=/config/imports \
+  -e FPKG_BROWSE_ROOTS=/mnt/user:/config:/app/fpkg-builder \
   fpkg-builder-webui:local
 ```
 
