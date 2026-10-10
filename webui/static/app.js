@@ -1,26 +1,29 @@
-const form = document.querySelector("#build-form");
-const archiveForm = document.querySelector("#archive-form");
-const extractForm = document.querySelector("#extract-form");
+const jobForm = document.querySelector("#job-form");
+const settingsForm = document.querySelector("#settings-form");
 const runtime = document.querySelector("#runtime");
 const log = document.querySelector("#log");
 const jobState = document.querySelector("#job-state");
 const startButton = document.querySelector("#start");
-const archiveButton = document.querySelector("#archive-start");
-const extractButton = document.querySelector("#extract");
 const cancelButton = document.querySelector("#cancel");
-const compression = form.elements.compressionLevel;
-const archiveCompression = archiveForm.elements.compressionLevel;
+const compression = jobForm.elements.compressionLevel;
 const browserDialog = document.querySelector("#browser");
 const browserPath = document.querySelector("#browser-path");
 const browserRoots = document.querySelector("#browser-roots");
 const browserList = document.querySelector("#browser-list");
 const browserSelect = document.querySelector("#browser-select");
+const jobsList = document.querySelector("#jobs-list");
+const packagesList = document.querySelector("#packages-list");
+const diagnostics = document.querySelector("#diagnostics");
+const progressTitle = document.querySelector("#progress-title");
+const progressSubtitle = document.querySelector("#progress-subtitle");
+const progressFill = document.querySelector("#progress-fill");
 
 let activeJobId = null;
 let pollTimer = null;
 let browseInput = null;
 let browseType = "any";
 let currentBrowsePath = "/";
+let lastStatus = null;
 
 for (let level = -4; level <= 9; level += 1) {
   const option = document.createElement("option");
@@ -28,50 +31,72 @@ for (let level = -4; level <= 9; level += 1) {
   option.textContent = String(level);
   if (level === 7) option.selected = true;
   compression.append(option);
-  archiveCompression.append(option.cloneNode(true));
 }
 
-function asPayload() {
-  const data = new FormData(form);
-  return {
-    gameFolder: data.get("gameFolder"),
-    backportFolder: data.get("backportFolder"),
+function isArchive(path) {
+  return /\.(zip|7z|rar|tar|tgz|txz|tbz2|tar\.gz|tar\.xz|tar\.bz2)$/i.test(path || "");
+}
+
+function isPackage(path) {
+  return /\.pkg$/i.test(path || "");
+}
+
+function formValue(name) {
+  return String(new FormData(jobForm).get(name) || "").trim();
+}
+
+function payloadFromForm() {
+  const data = new FormData(jobForm);
+  const source = String(data.get("source") || "").trim();
+  const mode = data.get("mode");
+  const gameSource = String(data.get("gameSource") || "").trim();
+  const payload = {
     outputFolder: data.get("outputFolder"),
-    workFolder: data.get("workFolder"),
     name: data.get("name"),
-    contentVersion: data.get("contentVersion"),
-    toolkitRoot: data.get("toolkitRoot"),
-    temporaryDirectory: data.get("temporaryDirectory"),
     compressionLevel: data.get("compressionLevel"),
+    workFolder: data.get("workFolder"),
     rebuildBase: data.get("rebuildBase") === "on",
     keepWork: data.get("keepWork") === "on",
     force: data.get("force") === "on",
   };
-}
 
-function asExtractPayload() {
-  const data = new FormData(extractForm);
-  return {
-    kind: "extract",
-    package: data.get("package"),
-    destination: data.get("destination"),
-  };
-}
+  if (mode === "extract" || isPackage(source)) {
+    return {
+      kind: "extract",
+      package: source,
+      destination: data.get("outputFolder"),
+    };
+  }
 
-function asArchivePayload() {
-  const data = new FormData(archiveForm);
-  return {
-    kind: "archive_build",
-    archive: data.get("archive"),
-    outputFolder: data.get("outputFolder"),
-    basePackage: data.get("basePackage"),
-    gameArchive: data.get("gameArchive"),
-    gameFolder: data.get("gameFolder"),
-    name: data.get("name"),
-    compressionLevel: data.get("compressionLevel"),
-    keepWork: data.get("keepWork") === "on",
-    force: data.get("force") === "on",
-  };
+  if (mode === "game") {
+    if (isArchive(source)) {
+      return { ...payload, kind: "archive_build", archive: source };
+    }
+    return { ...payload, gameFolder: source };
+  }
+
+  if (mode === "backport" && !isArchive(source)) {
+    return {
+      ...payload,
+      kind: "folder_backport",
+      backportFolder: source,
+      basePackage: data.get("basePackage"),
+      gameFolder: gameSource && !isArchive(gameSource) ? gameSource : "",
+    };
+  }
+
+  if (mode === "backport" || isArchive(source)) {
+    return {
+      ...payload,
+      kind: "archive_build",
+      archive: source,
+      basePackage: data.get("basePackage"),
+      gameArchive: isArchive(gameSource) ? gameSource : "",
+      gameFolder: gameSource && !isArchive(gameSource) ? gameSource : "",
+    };
+  }
+
+  return { ...payload, gameFolder: source };
 }
 
 async function request(url, options = {}) {
@@ -83,44 +108,80 @@ async function request(url, options = {}) {
   return payload;
 }
 
-async function loadStatus() {
-  const status = await request("/api/status");
+function renderRuntime(status) {
   const missing = Object.entries(status.scripts)
     .filter(([, value]) => !value.exists)
     .map(([name]) => name);
   runtime.innerHTML = `
-    <strong>${status.canStart ? "Ready" : "Needs configuration"}</strong>
-    <span>PowerShell: ${status.powershell || "not found"}</span>
+    <strong>${status.canStart ? "Bereit" : "Konfiguration pruefen"}</strong>
+    <span>PowerShell: ${status.powershell || "nicht gefunden"}</span>
     <span>Root: ${status.root}</span>
-    <span>Browse: ${status.browseRoots.join(", ")}</span>
-    ${missing.length ? `<span>Missing: ${missing.join(", ")}</span>` : ""}
+    ${missing.length ? `<span>Fehlt: ${missing.join(", ")}</span>` : ""}
   `;
   startButton.disabled = !status.canStart;
+}
+
+function renderJobs(jobs) {
+  if (!jobs.length) {
+    jobsList.className = "list empty";
+    jobsList.textContent = "Noch keine Auftraege.";
+    return;
+  }
+  jobsList.className = "list";
+  jobsList.innerHTML = jobs
+    .slice()
+    .reverse()
+    .map((job) => {
+      const exit = job.returnCode === null ? "" : `Exit ${job.returnCode}`;
+      const date = new Date(job.createdAt * 1000).toLocaleString();
+      return `<article class="list-row">
+        <strong>${job.id}</strong>
+        <span>${job.status}</span>
+        <small>${date} ${exit}</small>
+      </article>`;
+    })
+    .join("");
+}
+
+async function loadStatus() {
+  const status = await request("/api/status");
+  lastStatus = status;
+  renderRuntime(status);
+  const jobs = await request("/api/jobs");
+  renderJobs(jobs.jobs);
+  activeJobId = jobs.activeJobId || activeJobId;
+}
+
+function renderProgress(job, lines = []) {
+  const running = job.status === "queued" || job.status === "running";
+  const failed = job.status === "failed";
+  progressTitle.textContent = running ? "Auftrag laeuft" : failed ? "Fehlgeschlagen" : job.status === "succeeded" ? "Fertig" : "Bereit";
+  progressSubtitle.textContent = lines.at(-1) || "Kein Auftrag gestartet.";
+  progressFill.style.width = running ? "45%" : job.status === "succeeded" ? "100%" : failed ? "100%" : "0%";
+  progressFill.classList.toggle("failed", failed);
 }
 
 async function pollJob() {
   if (!activeJobId) return;
   const payload = await request(`/api/jobs/${activeJobId}/log`);
-  jobState.textContent = `${payload.job.status} ${payload.job.returnCode === null ? "" : `(exit ${payload.job.returnCode})`}`;
+  jobState.textContent = payload.job.status;
   log.textContent = payload.log.join("\n");
   log.scrollTop = log.scrollHeight;
+  renderProgress(payload.job, payload.log);
   const running = payload.job.status === "queued" || payload.job.status === "running";
   startButton.disabled = running;
-  archiveButton.disabled = running;
-  extractButton.disabled = running;
   cancelButton.disabled = !running;
   if (!running) {
     clearInterval(pollTimer);
     pollTimer = null;
     activeJobId = null;
     await loadStatus();
+    await loadPackages().catch(() => {});
   }
 }
 
 async function startJob(payload) {
   startButton.disabled = true;
-  archiveButton.disabled = true;
-  extractButton.disabled = true;
   log.textContent = "";
   try {
     const response = await request("/api/jobs", {
@@ -134,23 +195,26 @@ async function startJob(payload) {
     pollTimer = setInterval(pollJob, 1200);
     await pollJob();
   } catch (error) {
-    jobState.textContent = "Error";
+    jobState.textContent = "Fehler";
     log.textContent = error.message;
+    progressTitle.textContent = "Fehler";
+    progressSubtitle.textContent = error.message;
+    progressFill.style.width = "100%";
+    progressFill.classList.add("failed");
     startButton.disabled = false;
-    archiveButton.disabled = false;
-    extractButton.disabled = false;
   }
 }
 
 function selectTab(name) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
-  form.classList.toggle("hidden", name !== "build");
-  archiveForm.classList.toggle("hidden", name !== "archive");
-  extractForm.classList.toggle("hidden", name !== "extract");
+  document.querySelectorAll(".tab-view").forEach((view) => view.classList.toggle("hidden", view.id !== `tab-${name}`));
+  if (name === "packages") loadPackages().catch((error) => renderError(packagesList, error));
+  if (name === "diagnostics") loadDiagnostics().catch((error) => renderError(diagnostics, error));
 }
 
-function setInputValue(value) {
-  if (browseInput) browseInput.value = value;
+function renderError(target, error) {
+  target.className = "list empty";
+  target.textContent = error.message;
 }
 
 async function loadBrowse(path = currentBrowsePath) {
@@ -175,7 +239,7 @@ async function loadBrowse(path = currentBrowsePath) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = `entry ${entry.type}`;
-    row.textContent = `${entry.type === "dir" ? "Folder" : "File"}  ${entry.name}`;
+    row.innerHTML = `<span>${entry.type === "dir" ? "Ordner" : "Datei"}</span><strong>${entry.name}</strong>`;
     row.addEventListener("click", () => {
       if (entry.type === "dir") {
         if (browseType === "dir") {
@@ -184,7 +248,7 @@ async function loadBrowse(path = currentBrowsePath) {
         }
         loadBrowse(entry.path);
       } else {
-        setInputValue(entry.path);
+        if (browseInput) browseInput.value = entry.path;
         browserDialog.close();
       }
     });
@@ -192,19 +256,67 @@ async function loadBrowse(path = currentBrowsePath) {
   }
 }
 
-form.addEventListener("submit", async (event) => {
+async function loadPackages() {
+  const output = encodeURIComponent(formValue("outputFolder") || "/mnt/user/fpkg-output");
+  const payload = await request(`/api/packages?path=${output}`);
+  if (!payload.packages.length) {
+    packagesList.className = "list empty";
+    packagesList.textContent = "Keine .pkg im Ausgabeordner gefunden.";
+    return;
+  }
+  packagesList.className = "list";
+  packagesList.innerHTML = payload.packages
+    .map((pkg) => `<article class="list-row">
+      <strong>${pkg.name}</strong>
+      <span>${pkg.sizeHuman}</span>
+      <small>${pkg.modified}</small>
+    </article>`)
+    .join("");
+}
+
+async function loadSettings() {
+  const settings = await request("/api/settings");
+  settingsForm.elements.defaultOutput.value = settings.defaultOutput || "/mnt/user/fpkg-output";
+  settingsForm.elements.defaultWork.value = settings.defaultWork || "/mnt/cache/appdata/fpkg-builder/work";
+  settingsForm.elements.archivePasswords.value = (settings.archivePasswords || []).join("\n");
+  settingsForm.elements.overlapPrepare.checked = settings.overlapPrepare !== false;
+  settingsForm.elements.verifyChecksums.checked = settings.verifyChecksums !== false;
+  jobForm.elements.outputFolder.value = settings.defaultOutput || jobForm.elements.outputFolder.value;
+  jobForm.elements.workFolder.value = settings.defaultWork || "";
+}
+
+async function saveSettings() {
+  const data = new FormData(settingsForm);
+  const payload = {
+    defaultOutput: data.get("defaultOutput"),
+    defaultWork: data.get("defaultWork"),
+    archivePasswords: String(data.get("archivePasswords") || "").split(/\r?\n/).filter(Boolean),
+    overlapPrepare: data.get("overlapPrepare") === "on",
+    verifyChecksums: data.get("verifyChecksums") === "on",
+  };
+  await request("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await loadSettings();
+}
+
+async function loadDiagnostics() {
+  const payload = await request("/api/diagnostics");
+  diagnostics.innerHTML = Object.entries(payload)
+    .map(([key, value]) => `<article class="diag-row"><strong>${key}</strong><pre>${JSON.stringify(value, null, 2)}</pre></article>`)
+    .join("");
+}
+
+jobForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await startJob(asPayload());
+  await startJob(payloadFromForm());
 });
 
-archiveForm.addEventListener("submit", async (event) => {
+settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await startJob(asArchivePayload());
-});
-
-extractForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await startJob(asExtractPayload());
+  await saveSettings();
 });
 
 cancelButton.addEventListener("click", async () => {
@@ -212,11 +324,6 @@ cancelButton.addEventListener("click", async () => {
   cancelButton.disabled = true;
   await request(`/api/jobs/${activeJobId}/cancel`, { method: "POST" });
   await pollJob();
-});
-
-loadStatus().catch((error) => {
-  runtime.textContent = error.message;
-  startButton.disabled = true;
 });
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -227,9 +334,9 @@ document.querySelectorAll(".browse").forEach((button) => {
   button.addEventListener("click", async () => {
     browseInput = button.closest(".path-row")?.querySelector("input") || null;
     browseType = button.dataset.type || "any";
-    currentBrowsePath = browseInput?.value || "/mnt/user";
+    currentBrowsePath = browseInput?.value || (lastStatus?.browseRoots?.[0] || "/mnt/user");
     browserDialog.showModal();
-    await loadBrowse(currentBrowsePath).catch(async () => loadBrowse("/mnt/user"));
+    await loadBrowse(currentBrowsePath).catch(async () => loadBrowse(lastStatus?.browseRoots?.[0] || "/mnt/user"));
   });
 });
 
@@ -239,8 +346,18 @@ browserRoots.addEventListener("click", (event) => {
 });
 
 browserSelect.addEventListener("click", () => {
-  setInputValue(currentBrowsePath);
+  if (browseInput) browseInput.value = currentBrowsePath;
   browserDialog.close();
 });
 
 document.querySelector("#browser-close").addEventListener("click", () => browserDialog.close());
+document.querySelector("#refresh-jobs").addEventListener("click", () => loadStatus());
+document.querySelector("#refresh-packages").addEventListener("click", () => loadPackages().catch((error) => renderError(packagesList, error)));
+document.querySelector("#refresh-diagnostics").addEventListener("click", () => loadDiagnostics().catch((error) => renderError(diagnostics, error)));
+document.querySelector("#copy-log").addEventListener("click", () => navigator.clipboard?.writeText(log.textContent || ""));
+
+loadStatus().catch((error) => {
+  runtime.textContent = error.message;
+  startButton.disabled = true;
+});
+loadSettings().catch(() => {});
