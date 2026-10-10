@@ -20,6 +20,8 @@ const progressFill = document.querySelector("#progress-fill");
 const modeHint = document.querySelector("#mode-hint");
 const sourceLabel = document.querySelector("#source-label");
 const sourceHint = document.querySelector("#source-hint");
+const gameSourceLabel = document.querySelector("#game-source-label");
+const gameSourceHint = document.querySelector("#game-source-hint");
 
 let activeJobId = null;
 let pollTimer = null;
@@ -32,7 +34,7 @@ for (let level = -4; level <= 9; level += 1) {
   const option = document.createElement("option");
   option.value = String(level);
   option.textContent = String(level);
-  if (level === 7) option.selected = true;
+  if (level === 4) option.selected = true;
   compression.append(option);
 }
 
@@ -82,6 +84,15 @@ function payloadFromForm() {
       return { ...payload, kind: "archive_build", archive: source };
     }
     return { ...payload, gameFolder: source };
+  }
+
+  if (mode === "game-backport-pair") {
+    return {
+      ...payload,
+      kind: "pair_build",
+      gameSource: source,
+      backportSource: gameSource,
+    };
   }
 
   if (mode === "backport-only") {
@@ -140,6 +151,16 @@ const modeUi = {
     hint: "Aus einem Game/RAW-Dump eine FPKG bauen.",
     fields: ["source", "output", "name"],
   },
+  "game-backport-pair": {
+    sourceLabel: "1. Game/RAW ZIP/Ordner",
+    sourcePlaceholder: "/mnt/user/NZB/game-dump-oder-raw.zip",
+    sourceHint: "Game-Dump-Ordner oder Archiv. Daraus wird zuerst die eigenstaendige Base-PKG gebaut.",
+    gameSourceLabel: "2. Backport ZIP/Ordner",
+    gameSourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
+    gameSourceHint: "Backport-Archiv oder entpackter Backport-Ordner. Danach wird eine separate Backport-PKG gegen die neue Base gebaut.",
+    hint: "Ein Durchlauf: Game/RAW entpacken, Base-PKG bauen, Backport entpacken und separate Backport-PKG gegen diese Base bauen.",
+    fields: ["source", "game-source", "output", "name"],
+  },
   "backport-base": {
     sourceLabel: "1. Backport ZIP/Ordner",
     sourcePlaceholder: "/mnt/user/NZB/backport.zip oder backport-ordner",
@@ -174,7 +195,11 @@ function updateModeUi() {
   sourceHint.textContent = config.sourceHint;
   modeHint.textContent = config.hint;
   jobForm.elements.source.placeholder = config.sourcePlaceholder;
+  gameSourceLabel.textContent = config.gameSourceLabel || "Game/RAW fuer Base";
+  gameSourceHint.textContent = config.gameSourceHint || "Nur noetig, wenn keine fertige Base-PKG vorhanden ist.";
+  jobForm.elements.gameSource.placeholder = config.gameSourcePlaceholder || "/mnt/user/NZB/game-dump-oder-raw.zip";
   jobForm.elements.basePackage.required = mode === "backport-base";
+  jobForm.elements.gameSource.required = mode === "game-backport-pair";
 }
 
 function renderJobs(jobs) {
@@ -199,13 +224,28 @@ function renderJobs(jobs) {
     .join("");
 }
 
-async function loadStatus() {
+function newestJob(jobs) {
+  return jobs
+    .slice()
+    .sort((left, right) => right.createdAt - left.createdAt)[0] || null;
+}
+
+async function loadStatus({ restoreLatest = true } = {}) {
   const status = await request("/api/status");
   lastStatus = status;
   renderRuntime(status);
-  const jobs = await request("/api/jobs");
-  renderJobs(jobs.jobs);
-  activeJobId = jobs.activeJobId || activeJobId;
+  const payload = await request("/api/jobs");
+  renderJobs(payload.jobs);
+
+  const restoredJob = payload.jobs.find((job) => job.id === payload.activeJobId) || (restoreLatest ? newestJob(payload.jobs) : null);
+  if (!activeJobId && restoredJob) {
+    activeJobId = restoredJob.id;
+    await pollJob();
+    const running = restoredJob.status === "queued" || restoredJob.status === "running";
+    if (running && !pollTimer) {
+      pollTimer = setInterval(pollJob, 1200);
+    }
+  }
 }
 
 function renderProgress(job, lines = []) {
@@ -231,7 +271,7 @@ async function pollJob() {
     clearInterval(pollTimer);
     pollTimer = null;
     activeJobId = null;
-    await loadStatus();
+    await loadStatus({ restoreLatest: false });
     await loadPackages().catch(() => {});
   }
 }
