@@ -22,8 +22,8 @@
   <DonateLink/>
   <Requires/>
   <Config Name="WebUI Port" Target="8080" Default="8088" Mode="tcp" Description="Host port for the fPKG Builder WebUI. Container port stays 8080." Type="Port" Display="always" Required="true" Mask="false">8088</Config>
-  <Config Name="Input Share" Target="/mnt/user/NZB" Default="/mnt/user/NZB" Mode="rw" Description="Share mounted into the container for ZIP/RAR/7z archives, game folders, backports and base PKGs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/NZB</Config>
-  <Config Name="Output" Target="/mnt/user/fpkg-output" Default="/mnt/user/NZB/fpkg-fixes/fpkg-output" Mode="rw" Description="Output folder for generated packages." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/NZB/fpkg-fixes/fpkg-output</Config>
+  <Config Name="Source Share" Target="/mnt/user/NZB" Default="/mnt/user/NZB" Mode="rw" Description="Source share for ZIP/RAR/7z archives, folder dumps, backports and base PKGs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/NZB</Config>
+  <Config Name="PS5 Output Share" Target="/mnt/user/fpkg-output" Default="/mnt/user/PS5" Mode="rw" Description="Default PS5 share for generated packages and output files." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/PS5</Config>
   <Config Name="Appdata" Target="/mnt/cache/appdata/fpkg-builder" Default="/mnt/cache/appdata/fpkg-builder-webui" Mode="rw" Description="Appdata folder for settings, imports and temporary work files." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/fpkg-builder-webui</Config>
   <Config Name="FPKG_REPO_ROOT" Target="FPKG_REPO_ROOT" Default="/app/fpkg-builder" Description="Path to the fPKG Builder repository inside the container." Type="Variable" Display="advanced" Required="true" Mask="false">/app/fpkg-builder</Config>
   <Config Name="FPKG_POWERSHELL" Target="FPKG_POWERSHELL" Default="pwsh" Description="PowerShell executable used by the WebUI runner." Type="Variable" Display="advanced" Required="true" Mask="false">pwsh</Config>
