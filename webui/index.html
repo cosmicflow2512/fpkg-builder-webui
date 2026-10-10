@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,187 +7,186 @@
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
-    <main class="shell">
-      <section class="panel intro">
+    <main class="app-shell">
+      <header class="topbar">
         <div>
           <p class="eyebrow">Unraid WebUI</p>
           <h1>fPKG Builder</h1>
         </div>
-        <div id="runtime" class="runtime">Checking runtime...</div>
-      </section>
+        <div id="runtime" class="runtime">Runtime wird geprueft...</div>
+      </header>
 
-      <section class="panel">
-        <div class="tabs">
-          <button type="button" class="tab active" data-tab="build">Build</button>
-          <button type="button" class="tab" data-tab="archive">Archive Build</button>
-          <button type="button" class="tab" data-tab="extract">Extract</button>
-        </div>
-
-        <form id="build-form" class="form">
-          <div class="grid">
-            <label>
-              <span>Game folder</span>
-              <div class="path-row">
-                <input name="gameFolder" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app">
-                <button type="button" class="browse" data-target="gameFolder" data-type="dir">Browse</button>
-              </div>
-            </label>
-            <label>
-              <span>Backport folder</span>
-              <div class="path-row">
-                <input name="backportFolder" autocomplete="off" placeholder="/mnt/user/backports/PPSA12345">
-                <button type="button" class="browse" data-target="backportFolder" data-type="dir">Browse</button>
-              </div>
-            </label>
-            <label>
-              <span>Output folder</span>
-              <div class="path-row">
-                <input name="outputFolder" autocomplete="off" required placeholder="/mnt/user/fpkg-output">
-                <button type="button" class="browse" data-target="outputFolder" data-type="dir">Browse</button>
-              </div>
-            </label>
-            <label>
-              <span>Work folder</span>
-              <div class="path-row">
-                <input name="workFolder" autocomplete="off" placeholder="/mnt/cache/appdata/fpkg-builder/work">
-                <button type="button" class="browse" data-target="workFolder" data-type="dir">Browse</button>
-              </div>
-            </label>
-            <label>
-              <span>Name</span>
-              <input name="name" autocomplete="off" placeholder="Defaults to titleId">
-            </label>
-            <label>
-              <span>Content version</span>
-              <input name="contentVersion" autocomplete="off" placeholder="Auto-bump">
-            </label>
-            <label>
-              <span>Toolkit root</span>
-              <input name="toolkitRoot" autocomplete="off" placeholder="Optional mounted toolkit path">
-            </label>
-            <label>
-              <span>Temp directory</span>
-              <input name="temporaryDirectory" autocomplete="off" placeholder="Optional publisher temp path">
-            </label>
+      <div class="workspace">
+        <section class="panel new-job">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Neuer Auftrag</p>
+              <h2>Quelle und Ausgabe</h2>
+            </div>
+            <span id="job-state" class="state-pill">Bereit</span>
           </div>
 
-          <div class="options">
+          <form id="job-form" class="form">
             <label>
-              <span>Compression</span>
-              <select name="compressionLevel"></select>
-            </label>
-            <label class="check"><input type="checkbox" name="rebuildBase"> Rebuild base</label>
-            <label class="check"><input type="checkbox" name="keepWork"> Keep work</label>
-            <label class="check"><input type="checkbox" name="force"> Overwrite output</label>
-          </div>
-
-          <div class="actions">
-            <button type="submit" id="start">Start build</button>
-            <button type="button" id="cancel" disabled>Cancel</button>
-          </div>
-        </form>
-
-        <form id="archive-form" class="form hidden">
-          <div class="grid">
-            <label>
-              <span>Main archive</span>
+              <span>Quelle</span>
               <div class="path-row">
-                <input name="archive" autocomplete="off" required placeholder="/mnt/user/NZB/fpkg-fixes/backport.zip">
-                <button type="button" class="browse" data-target="archive" data-type="file">Browse</button>
+                <input name="source" autocomplete="off" required placeholder="/mnt/user/NZB/fpkg-inbox/game-or-backport.zip">
+                <button type="button" class="browse" data-type="any">...</button>
               </div>
+              <small id="source-hint">Archiv, Game-Ordner, Base-PKG oder Backport-Ordner.</small>
             </label>
+
             <label>
-              <span>Output folder</span>
+              <span>Output</span>
               <div class="path-row">
                 <input name="outputFolder" autocomplete="off" required value="/mnt/user/fpkg-output">
-                <button type="button" class="browse" data-target="outputFolder" data-type="dir">Browse</button>
+                <button type="button" class="browse" data-type="dir">...</button>
               </div>
             </label>
+
             <label>
               <span>Base PKG</span>
               <div class="path-row">
                 <input name="basePackage" autocomplete="off" placeholder="/mnt/user/fpkg-output/PPSA12345.pkg">
-                <button type="button" class="browse" data-target="basePackage" data-type="file">Browse</button>
+                <button type="button" class="browse" data-type="file">...</button>
               </div>
+              <small>Optional fuer Backport-Archive, wenn die Base schon als fPKG existiert.</small>
             </label>
+
             <label>
-              <span>Game archive</span>
+              <span>Game-Quelle</span>
               <div class="path-row">
-                <input name="gameArchive" autocomplete="off" placeholder="/mnt/user/NZB/fpkg-fixes/game-dump.zip">
-                <button type="button" class="browse" data-target="gameArchive" data-type="file">Browse</button>
+                <input name="gameSource" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app oder game.zip">
+                <button type="button" class="browse" data-type="any">...</button>
               </div>
+              <small>Optional fuer Backport-Archive ohne Base-PKG.</small>
             </label>
-            <label>
-              <span>Game folder</span>
-              <div class="path-row">
-                <input name="gameFolder" autocomplete="off" placeholder="/mnt/user/games/PPSA12345-app">
-                <button type="button" class="browse" data-target="gameFolder" data-type="dir">Browse</button>
-              </div>
-            </label>
+
             <label>
               <span>Name</span>
-              <input name="name" autocomplete="off" placeholder="Auto from Base PKG or titleId">
+              <input name="name" autocomplete="off" placeholder="Auto aus Title-ID oder Dateiname">
             </label>
-          </div>
 
-          <div class="options">
-            <label>
-              <span>Compression</span>
-              <select name="compressionLevel"></select>
-            </label>
-            <label class="check"><input type="checkbox" name="keepWork"> Keep work</label>
-            <label class="check"><input type="checkbox" name="force"> Overwrite output</label>
-          </div>
-
-          <div class="actions">
-            <button type="submit" id="archive-start">Unpack and build</button>
-          </div>
-        </form>
-
-        <form id="extract-form" class="form hidden">
-          <div class="grid">
-            <label>
-              <span>Package</span>
-              <div class="path-row">
-                <input name="package" autocomplete="off" required placeholder="/mnt/user/fpkg-output/PPSA12345.pkg">
-                <button type="button" class="browse" data-target="package" data-type="file">Browse</button>
+            <div class="mode-box">
+              <span>Quelle behandeln als</span>
+              <div class="segmented">
+                <label><input type="radio" name="mode" value="auto" checked> Auto</label>
+                <label><input type="radio" name="mode" value="game"> Game</label>
+                <label><input type="radio" name="mode" value="backport"> Backport</label>
+                <label><input type="radio" name="mode" value="extract"> Extract</label>
               </div>
-            </label>
-            <label>
-              <span>Extract into</span>
-              <div class="path-row">
-                <input name="destination" autocomplete="off" required placeholder="/mnt/user/fpkg-output/extracted/PPSA12345">
-                <button type="button" class="browse" data-target="destination" data-type="dir">Browse</button>
+            </div>
+
+            <details class="advanced">
+              <summary>Erweitert</summary>
+              <div class="advanced-grid">
+                <label>
+                  <span>Kompression</span>
+                  <select name="compressionLevel"></select>
+                </label>
+                <label>
+                  <span>Arbeitsordner</span>
+                  <div class="path-row">
+                    <input name="workFolder" autocomplete="off" placeholder="/mnt/cache/appdata/fpkg-builder/work">
+                    <button type="button" class="browse" data-type="dir">...</button>
+                  </div>
+                </label>
+                <label class="check"><input type="checkbox" name="force"> Ausgabe ueberschreiben</label>
+                <label class="check"><input type="checkbox" name="keepWork"> Arbeitsordner behalten</label>
+                <label class="check"><input type="checkbox" name="rebuildBase"> Base neu bauen</label>
               </div>
-            </label>
-          </div>
+            </details>
 
-          <div class="actions">
-            <button type="submit" id="extract">Extract package</button>
-          </div>
-        </form>
-      </section>
+            <div class="actions">
+              <button type="submit" id="start">Auftrag starten</button>
+              <button type="button" id="cancel" disabled>Abbrechen</button>
+            </div>
+          </form>
+        </section>
 
-      <section class="panel log-panel">
-        <div class="log-head">
-          <h2>Job log</h2>
-          <span id="job-state">Idle</span>
-        </div>
-        <pre id="log"></pre>
-      </section>
+        <section class="right-stack">
+          <section class="panel progress-card">
+            <div>
+              <h2 id="progress-title">Bereit</h2>
+              <p id="progress-subtitle">Kein Auftrag gestartet.</p>
+            </div>
+            <div class="progress-line"><span id="progress-fill"></span></div>
+          </section>
+
+          <section class="panel tab-panel">
+            <nav class="tabs" aria-label="Ansichten">
+              <button type="button" class="tab active" data-tab="jobs">Auftraege</button>
+              <button type="button" class="tab" data-tab="packages">Pakete</button>
+              <button type="button" class="tab" data-tab="settings">Einstellungen</button>
+              <button type="button" class="tab" data-tab="diagnostics">Diagnose</button>
+            </nav>
+
+            <div id="tab-jobs" class="tab-view">
+              <div class="section-head">
+                <h2>Auftraege</h2>
+                <button type="button" id="refresh-jobs">Aktualisieren</button>
+              </div>
+              <div id="jobs-list" class="list empty">Noch keine Auftraege.</div>
+              <div class="log-head">
+                <h2>Log</h2>
+                <button type="button" id="copy-log">Kopieren</button>
+              </div>
+              <pre id="log"></pre>
+            </div>
+
+            <div id="tab-packages" class="tab-view hidden">
+              <div class="section-head">
+                <h2>Pakete</h2>
+                <button type="button" id="refresh-packages">Aktualisieren</button>
+              </div>
+              <div id="packages-list" class="list empty">Noch keine Paketliste geladen.</div>
+            </div>
+
+            <div id="tab-settings" class="tab-view hidden">
+              <form id="settings-form" class="form compact-form">
+                <label>
+                  <span>Standard-Output</span>
+                  <input name="defaultOutput" autocomplete="off" value="/mnt/user/fpkg-output">
+                </label>
+                <label>
+                  <span>Standard-Arbeitsordner</span>
+                  <input name="defaultWork" autocomplete="off" value="/mnt/cache/appdata/fpkg-builder/work">
+                </label>
+                <label>
+                  <span>Archiv-Passwoerter</span>
+                  <textarea name="archivePasswords" rows="6" placeholder="ein Passwort pro Zeile"></textarea>
+                </label>
+                <label class="check"><input type="checkbox" name="overlapPrepare" checked> Ueberlappend vorbereiten</label>
+                <label class="check"><input type="checkbox" name="verifyChecksums" checked> Pruefsummen vor dem Entpacken pruefen</label>
+                <button type="submit" id="save-settings">Einstellungen speichern</button>
+              </form>
+            </div>
+
+            <div id="tab-diagnostics" class="tab-view hidden">
+              <div class="section-head">
+                <h2>Diagnose</h2>
+                <button type="button" id="refresh-diagnostics">Aktualisieren</button>
+              </div>
+              <div id="diagnostics" class="diagnostics"></div>
+            </div>
+          </section>
+        </section>
+      </div>
     </main>
+
     <dialog id="browser">
       <div class="browser-head">
-        <strong>Select path</strong>
-        <button type="button" id="browser-close">Close</button>
+        <strong>Datei oder Ordner waehlen</strong>
+        <button type="button" id="browser-close">Schliessen</button>
       </div>
       <div id="browser-path"></div>
       <div id="browser-roots"></div>
       <div id="browser-list"></div>
       <div class="browser-actions">
-        <button type="button" id="browser-select">Use current folder</button>
+        <button type="button" id="browser-select">Aktuellen Ordner uebernehmen</button>
       </div>
     </dialog>
+
     <script src="/static/app.js"></script>
   </body>
 </html>
