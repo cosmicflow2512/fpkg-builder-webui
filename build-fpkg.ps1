@@ -200,7 +200,7 @@ if ($buildUpdate -and -not (Test-Path -LiteralPath $backport -PathType Container
 }
 
 # Both packages land in one folder and are named from the title, so the pair stays
-together and the update is always beside the base it was built against.
+# together and the update is always beside the base it was built against.
 function Get-OutputStem([string]$explicit, [string]$gameFolder) {
     if (-not [string]::IsNullOrWhiteSpace($explicit)) { return $explicit }
     if ($gameFolder) {
@@ -300,11 +300,22 @@ if ($refInfo.kind -ne 'ps5') {
 if (-not $refInfo.param) {
     throw 'The base package has no readable param.json; it may be a retail (encrypted) package.'
 }
+if ($null -ne $refInfo.serviceFiles -and
+    [int]$refInfo.serviceFiles.'license.info' -le 0) {
+    throw ("The reference package does not appear to contain sce_sys\license.info. " +
+           "The publisher needs that file for --ref_pkg_path delta builds; choose a base " +
+           "PKG built from a dump that includes sce_sys\license.info, or rebuild the base " +
+           "from the game dump/archive.")
+}
 $baseVersion = $refInfo.param.contentVersion
 Write-Note "title      : $($refInfo.param.titleName) [$($refInfo.param.titleId)]"
 Write-Note "contentId  : $($refInfo.param.contentId)"
 Write-Note "version    : $baseVersion"
 Write-Note "digest     : $($refInfo.digest)"
+if ($null -ne $refInfo.serviceFiles) {
+    Write-Note "license.info entries: $($refInfo.serviceFiles.'license.info')"
+    Write-Note "license.dat entries : $($refInfo.serviceFiles.'license.dat')"
+}
 Write-Note 'The console must have installed THIS package. A delta against any other'
 Write-Note 'build of the same game fails with CE-107891-6 (0x80b21165 DigestErr).'
 
