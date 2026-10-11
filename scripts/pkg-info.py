@@ -148,6 +148,10 @@ def describe(path: Path, want_param: bool = True) -> dict:
             result["param"]["titleName"] = default.get("titleName")
         else:
             result["param"] = None
+        result["serviceFiles"] = {
+            "license.info": contains(path, b"license.info"),
+            "license.dat": contains(path, b"license.dat"),
+        }
     return result
 
 
